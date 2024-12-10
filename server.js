@@ -17,6 +17,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 // In-memory storage for drawing history
 let drawingHistory = [];
 
+// Health check endpoint for Railway
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
 // Handle WebSocket connections
 io.on('connection', (socket) => {
     console.log('A user connected');
@@ -41,7 +46,7 @@ io.on('connection', (socket) => {
     });
 });
 
-// Start the HTTP server
+// Start the HTTP server on the correct port
 const PORT = process.env.PORT || 3000;
 http.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
