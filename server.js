@@ -48,6 +48,6 @@ io.on('connection', (socket) => {
 
 // Start the HTTP server on the correct port
 const PORT = process.env.PORT || 3000;
-http.listen(PORT, () => {
+http.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on port ${PORT}`);
 });
