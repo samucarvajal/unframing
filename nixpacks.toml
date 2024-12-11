@@ -1,5 +1,8 @@
 [phases.setup]
-nixpkgs = ["nodejs", "pkg-config", "cairo", "pango", "libpng", "jpeg", "giflib", "librsvg"]
+nixpkgs = ["nodejs-20_x", "pkg-config", "cairo", "pango", "libpng", "jpeg", "giflib", "librsvg"]
 
 [phases.install]
-command = "npm install"
+command = """
+apk add --no-cache build-base g++ cairo-dev pango-dev giflib-dev libjpeg-turbo-dev
+npm ci
+"""
