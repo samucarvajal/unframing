@@ -2,6 +2,7 @@ const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
 const { Server } = require('socket.io');
+const { createCanvas } = require('canvas'); // For server-side canvas support
 const fs = require('fs');
 const path = require('path');
 
@@ -55,26 +56,61 @@ io.on('connection', (socket) => {
     });
 });
 
-// Schedule the canvas reset for every minute (for testing)
-function scheduleReset() {
-    console.log('Starting the canvas reset schedule...');
+// Function to save a snapshot and reset the canvas
+function saveSnapshot() {
+    // Create a server-side canvas
+    const canvas = createCanvas(1440, 760); // Match your frontend canvas dimensions
+    const ctx = canvas.getContext('2d');
+
+    // Fill the background with #efefef (light grey)
+    ctx.fillStyle = '#efefef';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Replay the drawing history onto the server-side canvas
+    drawingHistory.forEach(data => {
+        if (data.type === 'draw') {
+            ctx.beginPath();
+            ctx.moveTo(data.x0, data.y0);
+            ctx.lineTo(data.x1, data.y1);
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = data.color;
+            ctx.stroke();
+        }
+    });
+
+    // Generate the snapshot filename
+    const date = new Date().toLocaleDateString('en-AU').replace(/\//g, '-');
+    const filename = `unframing_${date}.png`;
+    const filepath = path.join(snapshotFolder, filename);
+
+    // Save the canvas as a PNG file
+    const out = fs.createWriteStream(filepath);
+    const stream = canvas.createPNGStream();
+    stream.pipe(out);
+
+    out.on('finish', () => {
+        console.log(`Snapshot saved: ${filepath}`);
+    });
+
+    // Clear drawing history and notify clients to reset their canvas
+    drawingHistory = [];
+    io.emit('clear-canvas'); // Notify clients
+    console.log('Canvas reset and clients notified.');
+}
+
+// Schedule the snapshot and reset for every minute (for testing)
+function scheduleSnapshot() {
+    console.log('Starting the canvas snapshot schedule...');
 
     // Initial delay of 1 minute
     setTimeout(() => {
-        drawingHistory = [];
-        io.emit('clear-canvas');
-        console.log('Canvas reset and clients notified.');
-
-        // Repeat every 1 minute
-        setInterval(() => {
-            drawingHistory = [];
-            io.emit('clear-canvas');
-            console.log('Canvas reset and clients notified.');
-        }, 60 * 1000); // Repeat every 1 minute
+        saveSnapshot();
+        setInterval(saveSnapshot, 60 * 1000); // Repeat every 1 minute
     }, 60 * 1000); // Initial delay set to 1 minute
 }
 
-scheduleReset();
+scheduleSnapshot();
 
 // Start the HTTP server on the correct port
 const PORT = process.env.PORT || 3000;

@@ -66,6 +66,10 @@
         let lastX = 0;
         let lastY = 0;
 
+        // Fill canvas with initial background color
+        ctx.fillStyle = '#efefef';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
         // Handle drawing history
         socket.on('drawing-history', (history) => {
             history.forEach(data => {
@@ -172,6 +176,8 @@
         // Handle canvas clear
         socket.on('clear-canvas', () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#efefef'; // Fill with light grey after reset
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
         });
     </script>
 </body>
