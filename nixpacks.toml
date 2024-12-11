@@ -1,11 +1,14 @@
 [phases.setup]
 apt_packages = [
-  "python3",
-  "pkg-config",
-  "libcairo2-dev",
-  "libpango1.0-dev",
-  "libjpeg-dev",
-  "libgif-dev",
-  "librsvg2-dev",
-  "build-essential"
+    "python3",
+    "pkg-config",
+    "libcairo2-dev",
+    "libpango1.0-dev",
+    "libjpeg-dev",
+    "libgif-dev",
+    "librsvg2-dev",
+    "build-essential"
 ]
+
+[env]
+PYTHON = "python3"
