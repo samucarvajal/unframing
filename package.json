@@ -4,6 +4,7 @@
   "description": "A collaborative real-time drawing canvas",
   "main": "server.js",
   "scripts": {
+    "preinstall": "npm config set python python3",
     "start": "node server.js"
   },
   "dependencies": {
