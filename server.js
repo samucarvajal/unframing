@@ -2,30 +2,29 @@ const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
 const { Server } = require('socket.io');
-const { createCanvas } = require('canvas'); // For server-side canvas support
-const fs = require('fs');
-const path = require('path');
-
 const io = new Server(http, {
     cors: {
         origin: '*',
         methods: ['GET', 'POST']
     },
-    transports: ['websocket', 'polling'] // Enable WebSocket fallback
+    transports: ['websocket', 'polling']
 });
+const fs = require('fs');
+
+// Add logging to check server startup
+console.log('Server script is starting...');
+
+// Create snapshots directory if it doesn't exist
+const snapshotDir = './snapshots';
+if (!fs.existsSync(snapshotDir)) {
+    fs.mkdirSync(snapshotDir);
+}
 
 // Serve static files from the 'public' directory
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static('public'));
 
 // In-memory storage for drawing history
 let drawingHistory = [];
-
-// Ensure the snapshots directory exists
-const snapshotFolder = path.join(__dirname, 'snapshots');
-if (!fs.existsSync(snapshotFolder)) {
-    fs.mkdirSync(snapshotFolder);
-    console.log('Snapshots folder created.');
-}
 
 // Health check endpoint for Railway
 app.get('/health', (req, res) => {
@@ -56,18 +55,20 @@ io.on('connection', (socket) => {
     });
 });
 
-// Function to save a snapshot and reset the canvas
-function saveSnapshot() {
-    // Create a server-side canvas
-    const canvas = createCanvas(1440, 760); // Match your frontend canvas dimensions
+// Schedule snapshots and reset
+const takeSnapshotAndReset = () => {
+    console.log('Taking snapshot...');
+    const now = new Date();
+    const filename = `snapshots/unframing_${now.toISOString().split('T')[0]}.png`;
+
+    const { createCanvas } = require('canvas');
+    const canvas = createCanvas(1440, 760);
     const ctx = canvas.getContext('2d');
 
-    // Fill the background with #efefef (light grey)
     ctx.fillStyle = '#efefef';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Replay the drawing history onto the server-side canvas
-    drawingHistory.forEach(data => {
+    drawingHistory.forEach((data) => {
         if (data.type === 'draw') {
             ctx.beginPath();
             ctx.moveTo(data.x0, data.y0);
@@ -79,38 +80,35 @@ function saveSnapshot() {
         }
     });
 
-    // Generate the snapshot filename
-    const date = new Date().toLocaleDateString('en-AU').replace(/\//g, '-');
-    const filename = `unframing_${date}.png`;
-    const filepath = path.join(snapshotFolder, filename);
-
-    // Save the canvas as a PNG file
-    const out = fs.createWriteStream(filepath);
+    const out = fs.createWriteStream(filename);
     const stream = canvas.createPNGStream();
     stream.pipe(out);
+    out.on('finish', () => console.log(`Snapshot saved as ${filename}`));
 
-    out.on('finish', () => {
-        console.log(`Snapshot saved: ${filepath}`);
-    });
-
-    // Clear drawing history and notify clients to reset their canvas
+    // Clear the drawing history and notify clients
     drawingHistory = [];
-    io.emit('clear-canvas'); // Notify clients
-    console.log('Canvas reset and clients notified.');
-}
+    io.emit('clear-canvas');
+};
 
-// Schedule the snapshot and reset for every minute (for testing)
-function scheduleSnapshot() {
-    console.log('Starting the canvas snapshot schedule...');
+// Schedule snapshots to run at midnight
+const scheduleMidnightSnapshot = () => {
+    const now = new Date();
+    const nextMidnight = new Date();
+    nextMidnight.setHours(24, 0, 0, 0); // Set to midnight
+    const timeUntilMidnight = nextMidnight - now;
 
-    // Initial delay of 1 minute
+    console.log(`Scheduled first snapshot/reset in ${Math.ceil(timeUntilMidnight / 60000)} minutes.`);
+
     setTimeout(() => {
-        saveSnapshot();
-        setInterval(saveSnapshot, 60 * 1000); // Repeat every 1 minute
-    }, 60 * 1000); // Initial delay set to 1 minute
-}
+        takeSnapshotAndReset();
+        setInterval(takeSnapshotAndReset, 24 * 60 * 60 * 1000); // Every 24 hours
+    }, timeUntilMidnight);
+};
 
-scheduleSnapshot();
+scheduleMidnightSnapshot();
+
+// Log before starting the server
+console.log('About to start the server...');
 
 // Start the HTTP server on the correct port
 const PORT = process.env.PORT || 3000;
