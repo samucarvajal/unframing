@@ -55,27 +55,23 @@ io.on('connection', (socket) => {
     });
 });
 
-// Schedule the canvas reset for midnight Sydney time (No snapshots for now)
+// Schedule the canvas reset for every minute (for testing)
 function scheduleReset() {
-    const now = new Date();
-    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
-    const delay = midnight - now;
+    console.log('Starting the canvas reset schedule...');
 
+    // Initial delay of 1 minute
     setTimeout(() => {
-        // Clear drawing history and notify clients to reset their canvas
         drawingHistory = [];
-        io.emit('clear-canvas'); // Notify clients
+        io.emit('clear-canvas');
         console.log('Canvas reset and clients notified.');
 
-        // Schedule the next reset
+        // Repeat every 1 minute
         setInterval(() => {
             drawingHistory = [];
             io.emit('clear-canvas');
             console.log('Canvas reset and clients notified.');
-        }, 24 * 60 * 60 * 1000);
-    }, delay);
-
-    console.log(`Scheduled first reset in ${Math.round(delay / 1000 / 60)} minutes.`);
+        }, 60 * 1000); // Repeat every 1 minute
+    }, 60 * 1000); // Initial delay set to 1 minute
 }
 
 scheduleReset();
