@@ -10,6 +10,14 @@ const io = new Server(http, {
     transports: ['websocket', 'polling'] // Enable WebSocket fallback
 });
 const path = require('path');
+const fs = require('fs');
+
+// Ensure the snapshots directory exists
+const snapshotPath = path.join(__dirname, 'snapshots');
+if (!fs.existsSync(snapshotPath)) {
+    fs.mkdirSync(snapshotPath);
+    console.log('Snapshots folder created.');
+}
 
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
