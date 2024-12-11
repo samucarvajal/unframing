@@ -2,6 +2,9 @@ const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
 const { Server } = require('socket.io');
+const fs = require('fs');
+const path = require('path');
+
 const io = new Server(http, {
     cors: {
         origin: '*',
@@ -9,21 +12,19 @@ const io = new Server(http, {
     },
     transports: ['websocket', 'polling'] // Enable WebSocket fallback
 });
-const path = require('path');
-const fs = require('fs');
-
-// Ensure the snapshots directory exists
-const snapshotPath = path.join(__dirname, 'snapshots');
-if (!fs.existsSync(snapshotPath)) {
-    fs.mkdirSync(snapshotPath);
-    console.log('Snapshots folder created.');
-}
 
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
 // In-memory storage for drawing history
 let drawingHistory = [];
+
+// Ensure the snapshots directory exists
+const snapshotFolder = path.join(__dirname, 'snapshots');
+if (!fs.existsSync(snapshotFolder)) {
+    fs.mkdirSync(snapshotFolder);
+    console.log('Snapshots folder created.');
+}
 
 // Health check endpoint for Railway
 app.get('/health', (req, res) => {
@@ -53,6 +54,31 @@ io.on('connection', (socket) => {
         console.log('A user disconnected');
     });
 });
+
+// Schedule the canvas reset for midnight Sydney time (No snapshots for now)
+function scheduleReset() {
+    const now = new Date();
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
+    const delay = midnight - now;
+
+    setTimeout(() => {
+        // Clear drawing history and notify clients to reset their canvas
+        drawingHistory = [];
+        io.emit('clear-canvas'); // Notify clients
+        console.log('Canvas reset and clients notified.');
+
+        // Schedule the next reset
+        setInterval(() => {
+            drawingHistory = [];
+            io.emit('clear-canvas');
+            console.log('Canvas reset and clients notified.');
+        }, 24 * 60 * 60 * 1000);
+    }, delay);
+
+    console.log(`Scheduled first reset in ${Math.round(delay / 1000 / 60)} minutes.`);
+}
+
+scheduleReset();
 
 // Start the HTTP server on the correct port
 const PORT = process.env.PORT || 3000;
