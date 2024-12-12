@@ -1,14 +1,13 @@
 [phases.setup]
-apt_packages = [
-    "python3",
+nixPkgs = ["python3", "python3-pip"]
+aptPkgs = [
     "pkg-config",
     "libcairo2-dev",
     "libpango1.0-dev",
     "libjpeg-dev",
     "libgif-dev",
     "librsvg2-dev",
-    "build-essential",
-    "python3-pip"
+    "build-essential"
 ]
 
 [phases.install]
@@ -16,4 +15,5 @@ cmds = ["npm ci"]
 
 [env]
 PYTHON = "python3"
-PATH = "/usr/local/bin:${PATH}"
+NIXPACKS_PYTHON = "python3"
+NIXPACKS_PYTHON_VERSION = "3.11"
