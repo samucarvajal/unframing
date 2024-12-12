@@ -2,6 +2,7 @@ const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
 const { Server } = require('socket.io');
+const cloudinary = require('cloudinary').v2;
 const io = new Server(http, {
     cors: {
         origin: '*',
@@ -10,6 +11,13 @@ const io = new Server(http, {
     transports: ['websocket', 'polling']
 });
 const fs = require('fs');
+
+// Configure Cloudinary
+cloudinary.config({ 
+    cloud_name: 'du4xsnsjd', 
+    api_key: '211798632235737', 
+    api_secret: 'iKEjrcFjO4WYrqILrrcWqwz55wc'
+});
 
 // Add logging to check server startup
 console.log('Server script is starting...');
@@ -64,17 +72,16 @@ const takeSnapshotAndReset = async () => {
 
     try {
         const now = new Date();
-        const filename = `snapshots/unframing_${now.toISOString().replace(/[:.]/g, '-')}.png`;
+        const filename = `unframing_${now.toISOString().replace(/[:.]/g, '-')}`;
+        const tempPath = `${snapshotDir}/${filename}.png`;
 
         const { createCanvas } = require('canvas');
         const canvas = createCanvas(1440, 760);
         const ctx = canvas.getContext('2d');
 
-        // Set background
         ctx.fillStyle = '#efefef';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Draw all lines
         drawingHistory.forEach((data) => {
             if (data.type === 'draw') {
                 ctx.beginPath();
@@ -87,19 +94,27 @@ const takeSnapshotAndReset = async () => {
             }
         });
 
-        // Create write stream for the file
-        const out = fs.createWriteStream(filename);
+        // First save locally
+        const out = fs.createWriteStream(tempPath);
         const stream = canvas.createPNGStream();
         
-        // Wait for the file to be written
         await new Promise((resolve, reject) => {
             stream.pipe(out);
             out.on('finish', resolve);
             out.on('error', reject);
         });
 
-        console.log(`Snapshot saved as ${filename}`);
-        
+        // Then upload to Cloudinary
+        const result = await cloudinary.uploader.upload(tempPath, {
+            folder: 'unframing',
+            public_id: filename
+        });
+
+        console.log(`Snapshot uploaded to Cloudinary: ${result.secure_url}`);
+
+        // Delete local file after upload
+        fs.unlinkSync(tempPath);
+
         // Clear the drawing history
         drawingHistory = [];
         
@@ -116,11 +131,10 @@ const takeSnapshotAndReset = async () => {
 const scheduleSnapshots = () => {
     console.log('Setting up one-minute interval for snapshots...');
     
-    // Take first snapshot after 1 minute
-    setTimeout(() => {
+    // Set up interval for snapshots every minute
+    setInterval(() => {
+        console.log('Timer triggered, taking snapshot...');
         takeSnapshotAndReset();
-        // Then take snapshots every minute
-        setInterval(takeSnapshotAndReset, 60 * 1000);
     }, 60 * 1000);
 };
 
