@@ -182,26 +182,7 @@
             // Clear any ongoing drawing states
             isDrawing = false;
             
-            // Optional: Notify user
             console.log('Canvas was cleared by server');
-            
-            // Add a visual indicator
-            const flash = document.createElement('div');
-            flash.style.position = 'fixed';
-            flash.style.top = '0';
-            flash.style.left = '0';
-            flash.style.right = '0';
-            flash.style.padding = '10px';
-            flash.style.background = 'rgba(0,0,0,0.7)';
-            flash.style.color = 'white';
-            flash.style.textAlign = 'center';
-            flash.innerHTML = 'Canvas has been reset and saved!';
-            document.body.appendChild(flash);
-            
-            // Remove the notification after 3 seconds
-            setTimeout(() => {
-                flash.remove();
-            }, 3000);
         });
     </script>
 </body>
