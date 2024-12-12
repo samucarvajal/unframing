@@ -7,8 +7,13 @@ apt_packages = [
     "libjpeg-dev",
     "libgif-dev",
     "librsvg2-dev",
-    "build-essential"
+    "build-essential",
+    "python3-pip"
 ]
+
+[phases.install]
+cmds = ["npm ci"]
 
 [env]
 PYTHON = "python3"
+PATH = "/usr/local/bin:${PATH}"
