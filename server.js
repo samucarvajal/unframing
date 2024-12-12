@@ -55,11 +55,11 @@ io.on('connection', (socket) => {
     });
 });
 
-// Schedule snapshots and reset
+// Take snapshot and reset function
 const takeSnapshotAndReset = () => {
     console.log('Taking snapshot...');
     const now = new Date();
-    const filename = `snapshots/unframing_${now.toISOString().split('T')[0]}.png`;
+    const filename = `snapshots/unframing_${now.toISOString().replace(/[:.]/g, '-')}.png`;
 
     const { createCanvas } = require('canvas');
     const canvas = createCanvas(1440, 760);
@@ -83,32 +83,27 @@ const takeSnapshotAndReset = () => {
     const out = fs.createWriteStream(filename);
     const stream = canvas.createPNGStream();
     stream.pipe(out);
-    out.on('finish', () => console.log(`Snapshot saved as ${filename}`));
-
-    // Clear the drawing history and notify clients
-    drawingHistory = [];
-    io.emit('clear-canvas');
+    out.on('finish', () => {
+        console.log(`Snapshot saved as ${filename}`);
+        // Clear the drawing history and notify clients
+        drawingHistory = [];
+        io.emit('clear-canvas');
+    });
 };
 
-// Schedule snapshots to run at midnight
-const scheduleMidnightSnapshot = () => {
-    const now = new Date();
-    const nextMidnight = new Date();
-    nextMidnight.setHours(24, 0, 0, 0); // Set to midnight
-    const timeUntilMidnight = nextMidnight - now;
-
-    console.log(`Scheduled first snapshot/reset in ${Math.ceil(timeUntilMidnight / 60000)} minutes.`);
-
+// Schedule snapshots to run every minute (for testing)
+const scheduleSnapshots = () => {
+    console.log('Setting up one-minute interval for snapshots...');
+    // Take first snapshot after 1 minute
     setTimeout(() => {
         takeSnapshotAndReset();
-        setInterval(takeSnapshotAndReset, 24 * 60 * 60 * 1000); // Every 24 hours
-    }, timeUntilMidnight);
+        // Then take snapshots every minute
+        setInterval(takeSnapshotAndReset, 60 * 1000);
+    }, 60 * 1000);
 };
 
-scheduleMidnightSnapshot();
-
-// Log before starting the server
-console.log('About to start the server...');
+// Initialize snapshot scheduling
+scheduleSnapshots();
 
 // Start the HTTP server on the correct port
 const PORT = process.env.PORT || 3000;
