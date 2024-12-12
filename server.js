@@ -40,8 +40,6 @@ io.on('connection', (socket) => {
 
     // Handle drawing data
     socket.on('draw', (data) => {
-        console.log('Drawing data received:', data);
-
         // Save the drawing data to history
         drawingHistory.push(data);
 
@@ -56,44 +54,68 @@ io.on('connection', (socket) => {
 });
 
 // Take snapshot and reset function
-const takeSnapshotAndReset = () => {
-    console.log('Taking snapshot...');
-    const now = new Date();
-    const filename = `snapshots/unframing_${now.toISOString().replace(/[:.]/g, '-')}.png`;
+const takeSnapshotAndReset = async () => {
+    console.log('Taking snapshot and resetting canvas...');
+    
+    if (drawingHistory.length === 0) {
+        console.log('No drawings to snapshot, skipping...');
+        return;
+    }
 
-    const { createCanvas } = require('canvas');
-    const canvas = createCanvas(1440, 760);
-    const ctx = canvas.getContext('2d');
+    try {
+        const now = new Date();
+        const filename = `snapshots/unframing_${now.toISOString().replace(/[:.]/g, '-')}.png`;
 
-    ctx.fillStyle = '#efefef';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+        const { createCanvas } = require('canvas');
+        const canvas = createCanvas(1440, 760);
+        const ctx = canvas.getContext('2d');
 
-    drawingHistory.forEach((data) => {
-        if (data.type === 'draw') {
-            ctx.beginPath();
-            ctx.moveTo(data.x0, data.y0);
-            ctx.lineTo(data.x1, data.y1);
-            ctx.lineWidth = 3;
-            ctx.lineCap = 'round';
-            ctx.strokeStyle = data.color;
-            ctx.stroke();
-        }
-    });
+        // Set background
+        ctx.fillStyle = '#efefef';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    const out = fs.createWriteStream(filename);
-    const stream = canvas.createPNGStream();
-    stream.pipe(out);
-    out.on('finish', () => {
+        // Draw all lines
+        drawingHistory.forEach((data) => {
+            if (data.type === 'draw') {
+                ctx.beginPath();
+                ctx.moveTo(data.x0, data.y0);
+                ctx.lineTo(data.x1, data.y1);
+                ctx.lineWidth = 3;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = data.color;
+                ctx.stroke();
+            }
+        });
+
+        // Create write stream for the file
+        const out = fs.createWriteStream(filename);
+        const stream = canvas.createPNGStream();
+        
+        // Wait for the file to be written
+        await new Promise((resolve, reject) => {
+            stream.pipe(out);
+            out.on('finish', resolve);
+            out.on('error', reject);
+        });
+
         console.log(`Snapshot saved as ${filename}`);
-        // Clear the drawing history and notify clients
+        
+        // Clear the drawing history
         drawingHistory = [];
+        
+        // Notify all clients to clear their canvases
         io.emit('clear-canvas');
-    });
+        
+        console.log('Canvas reset complete');
+    } catch (error) {
+        console.error('Error taking snapshot:', error);
+    }
 };
 
 // Schedule snapshots to run every minute (for testing)
 const scheduleSnapshots = () => {
     console.log('Setting up one-minute interval for snapshots...');
+    
     // Take first snapshot after 1 minute
     setTimeout(() => {
         takeSnapshotAndReset();

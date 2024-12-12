@@ -8,7 +8,8 @@ aptPkgs = [
     "libjpeg-dev",
     "libgif-dev",
     "librsvg2-dev",
-    "build-essential"
+    "build-essential",
+    "libcairo2"
 ]
 
 [phases.install]
