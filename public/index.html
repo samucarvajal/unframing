@@ -175,9 +175,14 @@
 
         // Handle canvas clear
         socket.on('clear-canvas', () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#efefef'; // Fill with light grey after reset
+            // Clear the canvas completely
+            ctx.fillStyle = '#efefef';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Reset drawing state
+            isDrawing = false;
+            
+            console.log('Canvas auto-cleared by server');
         });
     </script>
 </body>
