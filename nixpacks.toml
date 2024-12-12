@@ -9,7 +9,12 @@ aptPkgs = [
     "libgif-dev",
     "librsvg2-dev",
     "build-essential",
-    "libcairo2"
+    "libcairo2",
+    "libxi6",
+    "libglib2.0-0",
+    "libpangocairo-1.0-0",
+    "libpango1.0-0",
+    "libpango-1.0-0"
 ]
 
 [phases.install]
@@ -18,3 +23,4 @@ cmds = ["npm ci"]
 [env]
 PYTHON = "python3"
 PATH = "/usr/local/bin:${PATH}"
+LD_LIBRARY_PATH = "/usr/local/lib:/usr/lib:/lib"
