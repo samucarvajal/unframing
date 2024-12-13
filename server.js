@@ -64,11 +64,13 @@ io.on('connection', (socket) => {
 
     // Handle drawing data
     socket.on('draw', (data) => {
-        // Save the drawing data to history
-        drawingHistory.push(data);
+        if (!data.timestamp || Date.now() - data.timestamp > 1000) {
+            // Save the drawing data to history
+            drawingHistory.push(data);
 
-        // Broadcast the drawing data to other users
-        socket.broadcast.emit('draw', data);
+            // Broadcast the drawing data to other users
+            socket.broadcast.emit('draw', data);
+        }
     });
 
     // Handle disconnection
@@ -81,14 +83,15 @@ io.on('connection', (socket) => {
 const takeSnapshotAndReset = async () => {
     console.log('Taking snapshot and resetting canvas...');
     
+    // Send reset signal first with timestamp
+    io.emit('force-clear-canvas', { timestamp: Date.now() });
+    
     if (drawingHistory.length === 0) {
         console.log('No drawings to snapshot, skipping...');
         return;
     }
 
     try {
-        // First, force clear all clients immediately
-        io.emit('force-clear-canvas');
         drawingHistory = [];
 
         const now = new Date();
