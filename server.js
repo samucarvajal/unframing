@@ -22,6 +22,17 @@ cloudinary.config({
 // Add logging to check server startup
 console.log('Server script is starting...');
 
+// Add cache control headers
+app.use((req, res, next) => {
+    res.set({
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'Surrogate-Control': 'no-store'
+    });
+    next();
+});
+
 // Create snapshots directory if it doesn't exist
 const snapshotDir = './snapshots';
 if (!fs.existsSync(snapshotDir)) {
