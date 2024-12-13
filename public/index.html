@@ -15,7 +15,6 @@
             width: 1440px;
             height: 760px;
             position: relative;
-            touch-action: none; /* Disable default panning gestures */
         }
         canvas {
             display: block;
@@ -63,13 +62,9 @@
         const canvas = document.getElementById('drawingCanvas');
         const ctx = canvas.getContext('2d');
         let isDrawing = false;
-        let isPanning = false;
         let currentColor = '#1d1d1d';
         let lastX = 0;
         let lastY = 0;
-        let offsetX = 0;
-        let offsetY = 0;
-        let startTouches = [];
 
         // Fill canvas with initial background color
         ctx.fillStyle = '#efefef';
@@ -78,8 +73,12 @@
         // Handle window focus
         window.addEventListener('focus', () => {
             console.log('Page regained focus. Clearing canvas and requesting current state.');
+            
+            // Clear the canvas
             ctx.fillStyle = '#efefef';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Request the latest canvas state from the server
             socket.emit('request-state');
         });
 
@@ -107,8 +106,11 @@
 
         // Handle current state update
         socket.on('current-state', (history) => {
+            // Clear canvas
             ctx.fillStyle = '#efefef';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Redraw current state
             history.forEach(data => {
                 if (data.type === 'draw') {
                     ctx.beginPath();
@@ -122,56 +124,36 @@
             });
         });
 
-        // Handle two-finger panning
-        canvas.addEventListener('touchstart', (e) => {
-            if (e.touches.length === 2) {
-                isPanning = true;
-                startTouches = [...e.touches];
-                e.preventDefault();
-            } else if (e.touches.length === 1 && !isPanning) {
-                isDrawing = true;
-                const pos = getPosition(e.touches[0]);
-                lastX = pos.x - offsetX;
-                lastY = pos.y - offsetY;
-            }
-        });
-
-        canvas.addEventListener('touchmove', (e) => {
-            if (isPanning && e.touches.length === 2) {
-                const dx = e.touches[0].clientX - startTouches[0].clientX;
-                const dy = e.touches[0].clientY - startTouches[0].clientY;
-                offsetX += dx;
-                offsetY += dy;
-                startTouches = [...e.touches];
-
-                ctx.setTransform(1, 0, 0, 1, offsetX, offsetY);
-                socket.emit('request-state');
-                e.preventDefault();
-            } else if (isDrawing && e.touches.length === 1) {
-                const pos = getPosition(e.touches[0]);
-                draw({ x: pos.x - offsetX, y: pos.y - offsetY });
-            }
-        });
-
-        canvas.addEventListener('touchend', (e) => {
-            if (e.touches.length < 2) {
-                isPanning = false;
-            }
-            isDrawing = false;
-        });
-
-        function getPosition(touch) {
+        function getPosition(e) {
             const rect = canvas.getBoundingClientRect();
             const scaleX = canvas.width / rect.width;
             const scaleY = canvas.height / rect.height;
 
-            const x = (touch.clientX - rect.left) * scaleX;
-            const y = (touch.clientY - rect.top) * scaleY;
+            const x = ((e.type.includes('touch') ? e.touches[0].clientX : e.clientX) - rect.left) * scaleX;
+            const y = ((e.type.includes('touch') ? e.touches[0].clientY : e.clientY) - rect.top) * scaleY;
 
             return { x, y };
         }
 
-        function draw(pos) {
+        function startDrawing(e) {
+            isDrawing = true;
+            const pos = getPosition(e);
+            lastX = pos.x;
+            lastY = pos.y;
+        }
+
+        function stopDrawing() {
+            isDrawing = false;
+            socket.emit('draw', {
+                type: 'end'
+            });
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+
+            const pos = getPosition(e);
+
             ctx.beginPath();
             ctx.moveTo(lastX, lastY);
             ctx.lineTo(pos.x, pos.y);
@@ -180,6 +162,7 @@
             ctx.strokeStyle = currentColor;
             ctx.stroke();
 
+            // Emit line data
             socket.emit('draw', {
                 type: 'draw',
                 x0: lastX,
@@ -206,6 +189,17 @@
             }
         });
 
+        // Event listeners for mouse
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+
+        // Event listeners for touch devices
+        canvas.addEventListener('touchstart', startDrawing);
+        canvas.addEventListener('touchmove', draw);
+        canvas.addEventListener('touchend', stopDrawing);
+
         // Color selection
         document.querySelectorAll('.color-dot').forEach(dot => {
             dot.addEventListener('click', (e) => {
@@ -217,6 +211,18 @@
         document.body.addEventListener('touchmove', (e) => {
             if (isDrawing) e.preventDefault();
         }, { passive: false });
+
+        // Handle canvas clear
+        socket.on('clear-canvas', () => {
+            // Clear the canvas completely
+            ctx.fillStyle = '#efefef';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Clear any ongoing drawing states
+            isDrawing = false;
+            
+            console.log('Canvas was cleared by server');
+        });
     </script>
 </body>
 </html>
