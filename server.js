@@ -57,6 +57,11 @@ io.on('connection', (socket) => {
     // Send the drawing history to the newly connected user
     socket.emit('drawing-history', drawingHistory);
 
+    // Handle state request when tab regains focus
+    socket.on('request-state', () => {
+        socket.emit('current-state', drawingHistory);
+    });
+
     // Handle drawing data
     socket.on('draw', (data) => {
         // Save the drawing data to history

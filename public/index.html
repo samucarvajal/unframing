@@ -70,8 +70,41 @@
         ctx.fillStyle = '#efefef';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+        // Handle window focus
+        window.addEventListener('focus', () => {
+            // When window regains focus, request current state from server
+            socket.emit('request-state');
+        });
+
+        // Handle visibility change
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                socket.emit('request-state');
+            }
+        });
+
         // Handle drawing history
         socket.on('drawing-history', (history) => {
+            history.forEach(data => {
+                if (data.type === 'draw') {
+                    ctx.beginPath();
+                    ctx.moveTo(data.x0, data.y0);
+                    ctx.lineTo(data.x1, data.y1);
+                    ctx.lineWidth = 3;
+                    ctx.lineCap = 'round';
+                    ctx.strokeStyle = data.color;
+                    ctx.stroke();
+                }
+            });
+        });
+
+        // Handle current state update
+        socket.on('current-state', (history) => {
+            // Clear canvas
+            ctx.fillStyle = '#efefef';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Redraw current state
             history.forEach(data => {
                 if (data.type === 'draw') {
                     ctx.beginPath();
