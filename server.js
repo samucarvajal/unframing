@@ -44,6 +44,7 @@ app.use(express.static('public'));
 
 // In-memory storage for drawing history
 let drawingHistory = [];
+let isResetting = false;
 
 // Health check endpoint for Railway
 app.get('/health', (req, res) => {
@@ -64,13 +65,14 @@ io.on('connection', (socket) => {
 
     // Handle drawing data
     socket.on('draw', (data) => {
-        if (!data.timestamp || Date.now() - data.timestamp > 1000) {
-            // Save the drawing data to history
-            drawingHistory.push(data);
+        // Don't process new drawings during reset
+        if (isResetting) return;
 
-            // Broadcast the drawing data to other users
-            socket.broadcast.emit('draw', data);
-        }
+        // Save the drawing data to history
+        drawingHistory.push(data);
+
+        // Broadcast the drawing data to other users
+        socket.broadcast.emit('draw', data);
     });
 
     // Handle disconnection
@@ -83,16 +85,21 @@ io.on('connection', (socket) => {
 const takeSnapshotAndReset = async () => {
     console.log('Taking snapshot and resetting canvas...');
     
-    // Send reset signal first with timestamp
-    io.emit('force-clear-canvas', { timestamp: Date.now() });
-    
     if (drawingHistory.length === 0) {
         console.log('No drawings to snapshot, skipping...');
         return;
     }
 
     try {
+        // Set resetting flag
+        isResetting = true;
+        
+        // Store current history for snapshot
+        const historyToSave = [...drawingHistory];
+        
+        // Clear history and notify clients immediately
         drawingHistory = [];
+        io.emit('force-clear-canvas');
 
         const now = new Date();
         const filename = `unframing_${now.toISOString().replace(/[:.]/g, '-')}`;
@@ -105,7 +112,7 @@ const takeSnapshotAndReset = async () => {
         ctx.fillStyle = '#efefef';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        drawingHistory.forEach((data) => {
+        historyToSave.forEach((data) => {
             if (data.type === 'draw') {
                 ctx.beginPath();
                 ctx.moveTo(data.x0, data.y0);
@@ -138,9 +145,14 @@ const takeSnapshotAndReset = async () => {
         // Delete local file after upload
         fs.unlinkSync(tempPath);
         
+        // Reset flag after everything is done
+        isResetting = false;
+        
         console.log('Canvas reset complete');
     } catch (error) {
         console.error('Error taking snapshot:', error);
+        // Make sure to reset flag even if there's an error
+        isResetting = false;
     }
 };
 
