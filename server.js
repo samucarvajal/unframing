@@ -85,8 +85,13 @@ io.on('connection', (socket) => {
 const takeSnapshotAndReset = async () => {
     console.log('Taking snapshot and resetting canvas...');
     
-    if (drawingHistory.length === 0) {
-        console.log('No drawings to snapshot, skipping...');
+    // Only count actual drawing events
+    const actualDrawings = drawingHistory.filter(data => data.type === 'draw');
+    
+    if (actualDrawings.length === 0) {
+        console.log('No actual drawings to snapshot, skipping...');
+        drawingHistory = []; // Clear any non-drawing events
+        io.emit('force-clear-canvas', { timestamp: Date.now() });
         return;
     }
 
@@ -168,7 +173,6 @@ const scheduleSnapshots = () => {
     setInterval(() => {
         console.log('Timer triggered, attempting snapshot and reset...');
         // Force immediate clear before taking snapshot
-        io.emit('force-clear-canvas', { timestamp: Date.now() });
         takeSnapshotAndReset();
         
         // Log next scheduled time
