@@ -212,16 +212,20 @@
             if (isDrawing) e.preventDefault();
         }, { passive: false });
 
-        // Handle canvas clear
-        socket.on('clear-canvas', () => {
-            // Clear the canvas completely
+        // Handle forced canvas clear
+        socket.on('force-clear-canvas', () => {
+            // Immediately stop any ongoing drawing
+            isDrawing = false;
+            
+            // Force clear the canvas
             ctx.fillStyle = '#efefef';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            // Clear any ongoing drawing states
-            isDrawing = false;
+            // Reset all drawing states
+            lastX = 0;
+            lastY = 0;
             
-            console.log('Canvas was cleared by server');
+            console.log('Canvas force cleared by server');
         });
     </script>
 </body>

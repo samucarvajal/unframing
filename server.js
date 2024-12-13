@@ -87,6 +87,10 @@ const takeSnapshotAndReset = async () => {
     }
 
     try {
+        // First, force clear all clients immediately
+        io.emit('force-clear-canvas');
+        drawingHistory = [];
+
         const now = new Date();
         const filename = `unframing_${now.toISOString().replace(/[:.]/g, '-')}`;
         const tempPath = `${snapshotDir}/${filename}.png`;
@@ -130,12 +134,6 @@ const takeSnapshotAndReset = async () => {
 
         // Delete local file after upload
         fs.unlinkSync(tempPath);
-
-        // Clear the drawing history
-        drawingHistory = [];
-        
-        // Notify all clients to clear their canvases
-        io.emit('clear-canvas');
         
         console.log('Canvas reset complete');
     } catch (error) {
