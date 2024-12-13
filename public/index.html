@@ -72,8 +72,8 @@
 
         // Handle window focus
         window.addEventListener('focus', () => {
-            // When window regains focus, request current state from server
-            socket.emit('request-state');
+            console.log('Page regained focus. Requesting current canvas state.');
+            socket.emit('request-state'); // Ask the server for the current canvas state
         });
 
         // Handle visibility change
