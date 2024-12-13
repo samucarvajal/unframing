@@ -99,7 +99,7 @@ const takeSnapshotAndReset = async () => {
         
         // Clear history and notify clients immediately
         drawingHistory = [];
-        io.emit('force-clear-canvas');
+        io.emit('force-clear-canvas', { timestamp: Date.now() });
 
         const now = new Date();
         const filename = `unframing_${now.toISOString().replace(/[:.]/g, '-')}`;
@@ -160,10 +160,20 @@ const takeSnapshotAndReset = async () => {
 const scheduleSnapshots = () => {
     console.log('Setting up one-minute interval for snapshots...');
     
+    // Log the next scheduled time
+    const nextReset = new Date(Date.now() + 60 * 1000);
+    console.log(`Next reset scheduled for: ${nextReset.toLocaleTimeString()}`);
+    
     // Set up interval for snapshots every minute
     setInterval(() => {
-        console.log('Timer triggered, taking snapshot...');
+        console.log('Timer triggered, attempting snapshot and reset...');
+        // Force immediate clear before taking snapshot
+        io.emit('force-clear-canvas', { timestamp: Date.now() });
         takeSnapshotAndReset();
+        
+        // Log next scheduled time
+        const nextReset = new Date(Date.now() + 60 * 1000);
+        console.log(`Next reset scheduled for: ${nextReset.toLocaleTimeString()}`);
     }, 60 * 1000);
 };
 

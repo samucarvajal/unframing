@@ -65,7 +65,6 @@
         let currentColor = '#1d1d1d';
         let lastX = 0;
         let lastY = 0;
-        let lastClearTimestamp = 0;
 
         // Fill canvas with initial background color
         ctx.fillStyle = '#efefef';
@@ -137,7 +136,6 @@
         }
 
         function startDrawing(e) {
-            if (Date.now() - lastClearTimestamp < 1000) return;
             isDrawing = true;
             const pos = getPosition(e);
             lastX = pos.x;
@@ -147,13 +145,12 @@
         function stopDrawing() {
             isDrawing = false;
             socket.emit('draw', {
-                type: 'end',
-                timestamp: Date.now()
+                type: 'end'
             });
         }
 
         function draw(e) {
-            if (!isDrawing || Date.now() - lastClearTimestamp < 1000) return;
+            if (!isDrawing) return;
 
             const pos = getPosition(e);
 
@@ -172,8 +169,7 @@
                 y0: lastY,
                 x1: pos.x,
                 y1: pos.y,
-                color: currentColor,
-                timestamp: Date.now()
+                color: currentColor
             });
 
             lastX = pos.x;
@@ -182,7 +178,7 @@
 
         // Receive drawing data from server
         socket.on('draw', (data) => {
-            if (data.type === 'draw' && Date.now() - lastClearTimestamp >= 1000) {
+            if (data.type === 'draw') {
                 ctx.beginPath();
                 ctx.moveTo(data.x0, data.y0);
                 ctx.lineTo(data.x1, data.y1);
@@ -218,8 +214,7 @@
 
         // Handle forced canvas clear
         socket.on('force-clear-canvas', (data) => {
-            // Update last clear timestamp
-            lastClearTimestamp = data.timestamp;
+            if (!data) return;
             
             // Immediately stop any ongoing drawing
             isDrawing = false;
