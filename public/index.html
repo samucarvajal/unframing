@@ -128,7 +128,7 @@
                 isPanning = true;
                 startTouches = [...e.touches];
                 e.preventDefault();
-            } else if (e.touches.length === 1) {
+            } else if (e.touches.length === 1 && !isPanning) {
                 isDrawing = true;
                 const pos = getPosition(e.touches[0]);
                 lastX = pos.x - offsetX;
@@ -197,8 +197,8 @@
         socket.on('draw', (data) => {
             if (data.type === 'draw') {
                 ctx.beginPath();
-                ctx.moveTo(data.x0 + offsetX, data.y0 + offsetY);
-                ctx.lineTo(data.x1 + offsetX, data.y1 + offsetY);
+                ctx.moveTo(data.x0, data.y0);
+                ctx.lineTo(data.x1, data.y1);
                 ctx.lineWidth = 3;
                 ctx.lineCap = 'round';
                 ctx.strokeStyle = data.color;
