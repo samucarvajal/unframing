@@ -63,19 +63,64 @@
         const canvas = document.getElementById('drawingCanvas');
         const ctx = canvas.getContext('2d');
         let isDrawing = false;
+        let isPanning = false;
         let currentColor = '#1d1d1d';
         let lastX = 0;
         let lastY = 0;
-        let isPanning = false;
-        let startTouches = [];
-
-        // Transform for panning
         let offsetX = 0;
         let offsetY = 0;
+        let startTouches = [];
 
         // Fill canvas with initial background color
         ctx.fillStyle = '#efefef';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Handle window focus
+        window.addEventListener('focus', () => {
+            console.log('Page regained focus. Clearing canvas and requesting current state.');
+            ctx.fillStyle = '#efefef';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            socket.emit('request-state');
+        });
+
+        // Handle visibility change
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                socket.emit('request-state');
+            }
+        });
+
+        // Handle drawing history
+        socket.on('drawing-history', (history) => {
+            history.forEach(data => {
+                if (data.type === 'draw') {
+                    ctx.beginPath();
+                    ctx.moveTo(data.x0, data.y0);
+                    ctx.lineTo(data.x1, data.y1);
+                    ctx.lineWidth = 3;
+                    ctx.lineCap = 'round';
+                    ctx.strokeStyle = data.color;
+                    ctx.stroke();
+                }
+            });
+        });
+
+        // Handle current state update
+        socket.on('current-state', (history) => {
+            ctx.fillStyle = '#efefef';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            history.forEach(data => {
+                if (data.type === 'draw') {
+                    ctx.beginPath();
+                    ctx.moveTo(data.x0, data.y0);
+                    ctx.lineTo(data.x1, data.y1);
+                    ctx.lineWidth = 3;
+                    ctx.lineCap = 'round';
+                    ctx.strokeStyle = data.color;
+                    ctx.stroke();
+                }
+            });
+        });
 
         // Handle two-finger panning
         canvas.addEventListener('touchstart', (e) => {
@@ -99,8 +144,8 @@
                 offsetY += dy;
                 startTouches = [...e.touches];
 
-                ctx.setTransform(1, 0, 0, 1, offsetX, offsetY); // Apply panning
-                redrawCanvas(); // Reapply all drawings
+                ctx.setTransform(1, 0, 0, 1, offsetX, offsetY);
+                socket.emit('request-state');
                 e.preventDefault();
             } else if (isDrawing && e.touches.length === 1) {
                 const pos = getPosition(e.touches[0]);
@@ -114,10 +159,6 @@
             }
             isDrawing = false;
         });
-
-        function redrawCanvas() {
-            socket.emit('request-state');
-        }
 
         function getPosition(touch) {
             const rect = canvas.getBoundingClientRect();
@@ -139,17 +180,17 @@
             ctx.strokeStyle = currentColor;
             ctx.stroke();
 
-            lastX = pos.x;
-            lastY = pos.y;
-
             socket.emit('draw', {
                 type: 'draw',
                 x0: lastX,
                 y0: lastY,
                 x1: pos.x,
                 y1: pos.y,
-                color: currentColor,
+                color: currentColor
             });
+
+            lastX = pos.x;
+            lastY = pos.y;
         }
 
         // Receive drawing data from server
@@ -166,11 +207,16 @@
         });
 
         // Color selection
-        document.querySelectorAll('.color-dot').forEach((dot) => {
+        document.querySelectorAll('.color-dot').forEach(dot => {
             dot.addEventListener('click', (e) => {
                 currentColor = e.target.style.backgroundColor;
             });
         });
+
+        // Prevent scrolling while drawing on touch devices
+        document.body.addEventListener('touchmove', (e) => {
+            if (isDrawing) e.preventDefault();
+        }, { passive: false });
     </script>
 </body>
 </html>
