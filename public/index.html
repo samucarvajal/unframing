@@ -15,6 +15,7 @@
             width: 1440px;
             height: 760px;
             position: relative;
+            touch-action: none; /* Disable default panning gestures */
         }
         canvas {
             display: block;
@@ -65,95 +66,71 @@
         let currentColor = '#1d1d1d';
         let lastX = 0;
         let lastY = 0;
+        let isPanning = false;
+        let startTouches = [];
+
+        // Transform for panning
+        let offsetX = 0;
+        let offsetY = 0;
 
         // Fill canvas with initial background color
         ctx.fillStyle = '#efefef';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Handle window focus
-        window.addEventListener('focus', () => {
-            console.log('Page regained focus. Clearing canvas and requesting current state.');
-            
-            // Clear the canvas
-            ctx.fillStyle = '#efefef';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Request the latest canvas state from the server
-            socket.emit('request-state');
-        });
-
-        // Handle visibility change
-        document.addEventListener('visibilitychange', () => {
-            if (!document.hidden) {
-                socket.emit('request-state');
+        // Handle two-finger panning
+        canvas.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                isPanning = true;
+                startTouches = [...e.touches];
+                e.preventDefault();
+            } else if (e.touches.length === 1) {
+                isDrawing = true;
+                const pos = getPosition(e.touches[0]);
+                lastX = pos.x - offsetX;
+                lastY = pos.y - offsetY;
             }
         });
 
-        // Handle drawing history
-        socket.on('drawing-history', (history) => {
-            history.forEach(data => {
-                if (data.type === 'draw') {
-                    ctx.beginPath();
-                    ctx.moveTo(data.x0, data.y0);
-                    ctx.lineTo(data.x1, data.y1);
-                    ctx.lineWidth = 3;
-                    ctx.lineCap = 'round';
-                    ctx.strokeStyle = data.color;
-                    ctx.stroke();
-                }
-            });
+        canvas.addEventListener('touchmove', (e) => {
+            if (isPanning && e.touches.length === 2) {
+                const dx = e.touches[0].clientX - startTouches[0].clientX;
+                const dy = e.touches[0].clientY - startTouches[0].clientY;
+                offsetX += dx;
+                offsetY += dy;
+                startTouches = [...e.touches];
+
+                ctx.setTransform(1, 0, 0, 1, offsetX, offsetY); // Apply panning
+                redrawCanvas(); // Reapply all drawings
+                e.preventDefault();
+            } else if (isDrawing && e.touches.length === 1) {
+                const pos = getPosition(e.touches[0]);
+                draw({ x: pos.x - offsetX, y: pos.y - offsetY });
+            }
         });
 
-        // Handle current state update
-        socket.on('current-state', (history) => {
-            // Clear canvas
-            ctx.fillStyle = '#efefef';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // Redraw current state
-            history.forEach(data => {
-                if (data.type === 'draw') {
-                    ctx.beginPath();
-                    ctx.moveTo(data.x0, data.y0);
-                    ctx.lineTo(data.x1, data.y1);
-                    ctx.lineWidth = 3;
-                    ctx.lineCap = 'round';
-                    ctx.strokeStyle = data.color;
-                    ctx.stroke();
-                }
-            });
+        canvas.addEventListener('touchend', (e) => {
+            if (e.touches.length < 2) {
+                isPanning = false;
+            }
+            isDrawing = false;
         });
 
-        function getPosition(e) {
+        function redrawCanvas() {
+            socket.emit('request-state');
+        }
+
+        function getPosition(touch) {
             const rect = canvas.getBoundingClientRect();
             const scaleX = canvas.width / rect.width;
             const scaleY = canvas.height / rect.height;
 
-            const x = ((e.type.includes('touch') ? e.touches[0].clientX : e.clientX) - rect.left) * scaleX;
-            const y = ((e.type.includes('touch') ? e.touches[0].clientY : e.clientY) - rect.top) * scaleY;
+            const x = (touch.clientX - rect.left) * scaleX;
+            const y = (touch.clientY - rect.top) * scaleY;
 
             return { x, y };
         }
 
-        function startDrawing(e) {
-            isDrawing = true;
-            const pos = getPosition(e);
-            lastX = pos.x;
-            lastY = pos.y;
-        }
-
-        function stopDrawing() {
-            isDrawing = false;
-            socket.emit('draw', {
-                type: 'end'
-            });
-        }
-
-        function draw(e) {
-            if (!isDrawing) return;
-
-            const pos = getPosition(e);
-
+        function draw(pos) {
             ctx.beginPath();
             ctx.moveTo(lastX, lastY);
             ctx.lineTo(pos.x, pos.y);
@@ -162,26 +139,25 @@
             ctx.strokeStyle = currentColor;
             ctx.stroke();
 
-            // Emit line data
+            lastX = pos.x;
+            lastY = pos.y;
+
             socket.emit('draw', {
                 type: 'draw',
                 x0: lastX,
                 y0: lastY,
                 x1: pos.x,
                 y1: pos.y,
-                color: currentColor
+                color: currentColor,
             });
-
-            lastX = pos.x;
-            lastY = pos.y;
         }
 
         // Receive drawing data from server
         socket.on('draw', (data) => {
             if (data.type === 'draw') {
                 ctx.beginPath();
-                ctx.moveTo(data.x0, data.y0);
-                ctx.lineTo(data.x1, data.y1);
+                ctx.moveTo(data.x0 + offsetX, data.y0 + offsetY);
+                ctx.lineTo(data.x1 + offsetX, data.y1 + offsetY);
                 ctx.lineWidth = 3;
                 ctx.lineCap = 'round';
                 ctx.strokeStyle = data.color;
@@ -189,39 +165,11 @@
             }
         });
 
-        // Event listeners for mouse
-        canvas.addEventListener('mousedown', startDrawing);
-        canvas.addEventListener('mousemove', draw);
-        canvas.addEventListener('mouseup', stopDrawing);
-        canvas.addEventListener('mouseout', stopDrawing);
-
-        // Event listeners for touch devices
-        canvas.addEventListener('touchstart', startDrawing);
-        canvas.addEventListener('touchmove', draw);
-        canvas.addEventListener('touchend', stopDrawing);
-
         // Color selection
-        document.querySelectorAll('.color-dot').forEach(dot => {
+        document.querySelectorAll('.color-dot').forEach((dot) => {
             dot.addEventListener('click', (e) => {
                 currentColor = e.target.style.backgroundColor;
             });
-        });
-
-        // Prevent scrolling while drawing on touch devices
-        document.body.addEventListener('touchmove', (e) => {
-            if (isDrawing) e.preventDefault();
-        }, { passive: false });
-
-        // Handle canvas clear
-        socket.on('clear-canvas', () => {
-            // Clear the canvas completely
-            ctx.fillStyle = '#efefef';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // Clear any ongoing drawing states
-            isDrawing = false;
-            
-            console.log('Canvas was cleared by server');
         });
     </script>
 </body>
