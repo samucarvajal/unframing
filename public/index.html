@@ -11,19 +11,22 @@
             overflow: auto;
             background: #efefef;
             height: 100%;
+            touch-action: none;
         }
         .canvas-container {
             width: 1440px;
             height: 760px;
             position: relative;
             overflow: auto;
-            -webkit-overflow-scrolling: touch; /* For smoother scrolling on iOS */
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-x pan-y;
         }
         canvas {
             display: block;
             background: #efefef;
             width: 1440px;
             height: 760px;
+            touch-action: none;
         }
         #colors {
             position: fixed;
@@ -63,11 +66,15 @@
     <script>
         const socket = io(); // Connect to the server
         const canvas = document.getElementById('drawingCanvas');
+        const canvasContainer = document.querySelector('.canvas-container');
         const ctx = canvas.getContext('2d');
         let isDrawing = false;
+        let isPanning = false;
         let currentColor = '#1d1d1d';
         let lastX = 0;
         let lastY = 0;
+        let lastScrollX = 0;
+        let lastScrollY = 0;
 
         // Fill canvas with initial background color
         ctx.fillStyle = '#efefef';
@@ -138,18 +145,65 @@
             return { x, y };
         }
 
+        function handleTouchStart(e) {
+            if (e.touches.length === 2) {
+                // Two-finger touch - enable panning
+                isPanning = true;
+                isDrawing = false;
+                lastScrollX = e.touches[0].clientX;
+                lastScrollY = e.touches[0].clientY;
+                e.preventDefault();
+            } else if (e.touches.length === 1) {
+                // Single-finger touch - enable drawing
+                isDrawing = true;
+                isPanning = false;
+                const pos = getPosition(e);
+                lastX = pos.x;
+                lastY = pos.y;
+            }
+        }
+
+        function handleTouchMove(e) {
+            if (isPanning && e.touches.length === 2) {
+                // Handle two-finger panning
+                const deltaX = e.touches[0].clientX - lastScrollX;
+                const deltaY = e.touches[0].clientY - lastScrollY;
+                canvasContainer.scrollLeft -= deltaX;
+                canvasContainer.scrollTop -= deltaY;
+                lastScrollX = e.touches[0].clientX;
+                lastScrollY = e.touches[0].clientY;
+                e.preventDefault();
+            } else if (isDrawing && e.touches.length === 1) {
+                // Handle drawing
+                draw(e);
+                e.preventDefault();
+            }
+        }
+
+        function handleTouchEnd(e) {
+            if (isPanning && e.touches.length < 2) {
+                isPanning = false;
+            }
+            if (isDrawing) {
+                isDrawing = false;
+                socket.emit('draw', { type: 'end' });
+            }
+        }
+
         function startDrawing(e) {
-            isDrawing = true;
-            const pos = getPosition(e);
-            lastX = pos.x;
-            lastY = pos.y;
+            if (e.type.includes('mouse')) {
+                isDrawing = true;
+                const pos = getPosition(e);
+                lastX = pos.x;
+                lastY = pos.y;
+            }
         }
 
         function stopDrawing() {
-            isDrawing = false;
-            socket.emit('draw', {
-                type: 'end'
-            });
+            if (isDrawing) {
+                isDrawing = false;
+                socket.emit('draw', { type: 'end' });
+            }
         }
 
         function draw(e) {
@@ -199,9 +253,10 @@
         canvas.addEventListener('mouseout', stopDrawing);
 
         // Event listeners for touch devices
-        canvas.addEventListener('touchstart', startDrawing);
-        canvas.addEventListener('touchmove', draw);
-        canvas.addEventListener('touchend', stopDrawing);
+        canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+        canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+        canvas.addEventListener('touchend', handleTouchEnd);
+        canvas.addEventListener('touchcancel', handleTouchEnd);
 
         // Color selection
         document.querySelectorAll('.color-dot').forEach(dot => {
@@ -210,17 +265,13 @@
             });
         });
 
-        // Prevent scrolling while drawing on touch devices
-        document.body.addEventListener('touchmove', (e) => {
-            if (isDrawing) e.preventDefault();
-        }, { passive: false });
-
         // Handle forced canvas clear
         socket.on('force-clear-canvas', (data) => {
             if (!data) return;
             
             // Immediately stop any ongoing drawing
             isDrawing = false;
+            isPanning = false;
             
             // Force clear the canvas
             ctx.fillStyle = '#efefef';
@@ -229,6 +280,8 @@
             // Reset all drawing states
             lastX = 0;
             lastY = 0;
+            lastScrollX = 0;
+            lastScrollY = 0;
             
             console.log('Canvas force cleared by server');
         });
