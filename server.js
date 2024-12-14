@@ -19,7 +19,6 @@ cloudinary.config({
     api_secret: 'iKEjrcFjO4WYrqILrrcWqwz55wc'
 });
 
-// Add logging to check server startup
 console.log('Server script is starting...');
 
 // Add cache control headers
@@ -42,9 +41,57 @@ if (!fs.existsSync(snapshotDir)) {
 // Serve static files from the 'public' directory
 app.use(express.static('public'));
 
-// In-memory storage for drawing history
-let drawingHistory = [];
-let isResetting = false;
+// Optimized data structures for drawing history
+class DrawingHistory {
+    constructor() {
+        this.segments = [];
+        this.batchSize = 0;
+        this.currentBatch = [];
+        this.isResetting = false;
+    }
+
+    addSegment(data) {
+        if (this.isResetting) return;
+        
+        if (data.type === 'draw') {
+            this.currentBatch.push(data);
+            this.batchSize++;
+
+            // Commit batch if it reaches threshold
+            if (this.batchSize >= 50) {
+                this.commitBatch();
+            }
+        } else if (data.type === 'end') {
+            this.commitBatch();
+        }
+    }
+
+    commitBatch() {
+        if (this.currentBatch.length > 0) {
+            this.segments.push(...this.currentBatch);
+            this.currentBatch = [];
+            this.batchSize = 0;
+        }
+    }
+
+    clear() {
+        this.segments = [];
+        this.currentBatch = [];
+        this.batchSize = 0;
+    }
+
+    getFullHistory() {
+        this.commitBatch();
+        return this.segments;
+    }
+
+    hasDrawings() {
+        return this.segments.length > 0 || this.currentBatch.length > 0;
+    }
+}
+
+// Initialize drawing history
+const drawingHistory = new DrawingHistory();
 
 // Health check endpoint for Railway
 app.get('/health', (req, res) => {
@@ -56,26 +103,24 @@ io.on('connection', (socket) => {
     console.log('A user connected');
 
     // Send the drawing history to the newly connected user
-    socket.emit('drawing-history', drawingHistory);
+    socket.emit('drawing-history', drawingHistory.getFullHistory());
 
     // Handle state request when tab regains focus
     socket.on('request-state', () => {
-        socket.emit('current-state', drawingHistory);
+        socket.emit('current-state', drawingHistory.getFullHistory());
     });
 
     // Handle drawing data
     socket.on('draw', (data) => {
-        // Don't process new drawings during reset
-        if (isResetting) return;
-
-        // Save the drawing data to history
-        drawingHistory.push(data);
-
-        // Broadcast the drawing data to other users
-        socket.broadcast.emit('draw', data);
+        // Add to history and broadcast
+        drawingHistory.addSegment(data);
+        
+        // Only broadcast draw events
+        if (data.type === 'draw') {
+            socket.broadcast.emit('draw', data);
+        }
     });
 
-    // Handle disconnection
     socket.on('disconnect', () => {
         console.log('A user disconnected');
     });
@@ -85,25 +130,22 @@ io.on('connection', (socket) => {
 const takeSnapshotAndReset = async () => {
     console.log('Taking snapshot and resetting canvas...');
     
-    // Only count actual drawing events
-    const actualDrawings = drawingHistory.filter(data => data.type === 'draw');
-    
-    if (actualDrawings.length === 0) {
+    if (!drawingHistory.hasDrawings()) {
         console.log('No actual drawings to snapshot, skipping...');
-        drawingHistory = []; // Clear any non-drawing events
+        drawingHistory.clear();
         io.emit('force-clear-canvas', { timestamp: Date.now() });
         return;
     }
 
     try {
         // Set resetting flag
-        isResetting = true;
+        drawingHistory.isResetting = true;
         
         // Store current history for snapshot
-        const historyToSave = [...drawingHistory];
+        const historyToSave = drawingHistory.getFullHistory();
         
         // Clear history and notify clients immediately
-        drawingHistory = [];
+        drawingHistory.clear();
         io.emit('force-clear-canvas', { timestamp: Date.now() });
 
         const now = new Date();
@@ -151,13 +193,13 @@ const takeSnapshotAndReset = async () => {
         fs.unlinkSync(tempPath);
         
         // Reset flag after everything is done
-        isResetting = false;
+        drawingHistory.isResetting = false;
         
         console.log('Canvas reset complete');
     } catch (error) {
         console.error('Error taking snapshot:', error);
         // Make sure to reset flag even if there's an error
-        isResetting = false;
+        drawingHistory.isResetting = false;
     }
 };
 
