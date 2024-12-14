@@ -2,9 +2,9 @@
   "name": "unframing",
   "version": "1.0.0",
   "description": "A collaborative real-time drawing canvas",
-  "main": "src/server.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "canvas": "^2.11.2",
