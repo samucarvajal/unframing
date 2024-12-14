@@ -1,25 +1,19 @@
 [phases.setup]
 nixPkgs = [
-    "nodejs-18_x",
-    "python3",
     "cairo",
     "pkg-config",
-    "libpng",
-    "pango",
-    "libjpeg",
-    "giflib",
-    "librsvg"
+    "python3",
+    "nodejs"
 ]
 
 [phases.build]
 cmds = [
-    "export PYTHON=/usr/bin/python3",
-    "apt-get update",
-    "apt-get install -y build-essential libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev python3"
+    "sudo apt-get update",
+    "sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev"
 ]
 
 [phases.install]
-cmds = ["npm ci"]
+cmds = ["npm install"]
 
 [start]
 cmd = "node src/server.js"
