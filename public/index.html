@@ -18,14 +18,12 @@
             position: relative;
             overflow: auto;
             -webkit-overflow-scrolling: touch;
-            touch-action: manipulation;
         }
         canvas {
             display: block;
             background: #efefef;
             width: 1440px;
             height: 760px;
-            touch-action: none;
         }
         #colors {
             position: fixed;
@@ -67,7 +65,6 @@
         const canvas = document.getElementById('drawingCanvas');
         const ctx = canvas.getContext('2d');
         let isDrawing = false;
-        let isPanning = false;
         let currentColor = '#1d1d1d';
         let lastX = 0;
         let lastY = 0;
@@ -142,35 +139,25 @@
         }
 
         function handleTouchStart(e) {
-            if (e.touches.length === 2) {
-                console.log('Two finger touch detected');  // Debug log
-                isPanning = true;
-                isDrawing = false;
-                e.preventDefault();
-            } else if (e.touches.length === 1 && !isPanning) {
+            // Only handle single-finger touches for drawing
+            if (e.touches.length === 1) {
                 isDrawing = true;
                 const pos = getPosition(e);
                 lastX = pos.x;
                 lastY = pos.y;
+                e.preventDefault(); // Prevent default only for drawing
             }
         }
 
         function handleTouchMove(e) {
-            if (isPanning && e.touches.length === 2) {
-                console.log('Two finger move detected');  // Debug log
-                e.preventDefault();
-                return;  // Let default scrolling behavior take over
-            } else if (isDrawing && e.touches.length === 1) {
+            // Only handle drawing for single-finger touches
+            if (isDrawing && e.touches.length === 1) {
                 draw(e);
-                e.preventDefault();
+                e.preventDefault(); // Prevent default only for drawing
             }
         }
 
-        function handleTouchEnd(e) {
-            console.log('Touch end, remaining touches:', e.touches.length);  // Debug log
-            if (e.touches.length < 2) {
-                isPanning = false;
-            }
+        function handleTouchEnd() {
             if (isDrawing) {
                 isDrawing = false;
                 socket.emit('draw', { type: 'end' });
@@ -239,7 +226,7 @@
         canvas.addEventListener('mouseup', stopDrawing);
         canvas.addEventListener('mouseout', stopDrawing);
 
-        // Event listeners for touch devices with passive false
+        // Event listeners for touch devices
         canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
         canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
         canvas.addEventListener('touchend', handleTouchEnd);
@@ -258,7 +245,6 @@
             
             // Immediately stop any ongoing drawing
             isDrawing = false;
-            isPanning = false;
             
             // Force clear the canvas
             ctx.fillStyle = '#efefef';
