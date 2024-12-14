@@ -68,6 +68,7 @@
         let currentColor = '#1d1d1d';
         let lastX = 0;
         let lastY = 0;
+        let lastTouchTime = 0;
 
         // Fill canvas with initial background color
         ctx.fillStyle = '#efefef';
@@ -139,13 +140,17 @@
         }
 
         function handleTouchStart(e) {
+            const now = Date.now();
             // Only handle single-finger touches for drawing
             if (e.touches.length === 1) {
-                isDrawing = true;
-                const pos = getPosition(e);
-                lastX = pos.x;
-                lastY = pos.y;
-                e.preventDefault(); // Prevent default only for drawing
+                // If the last touch ended very recently, don't start drawing yet
+                if (now - lastTouchTime > 100) {
+                    isDrawing = true;
+                    const pos = getPosition(e);
+                    lastX = pos.x;
+                    lastY = pos.y;
+                    e.preventDefault(); // Prevent default only for drawing
+                }
             }
         }
 
@@ -157,10 +162,13 @@
             }
         }
 
-        function handleTouchEnd() {
+        function handleTouchEnd(e) {
+            // Immediately reset drawing state
             if (isDrawing) {
                 isDrawing = false;
                 socket.emit('draw', { type: 'end' });
+                // Record when the touch ended
+                lastTouchTime = Date.now();
             }
         }
 
