@@ -41,29 +41,40 @@ if (!fs.existsSync(snapshotDir)) {
 // Serve static files from the 'public' directory
 app.use(express.static('public'));
 
-// Optimized data structures for drawing history
 class DrawingHistory {
     constructor() {
         this.segments = [];
         this.batchSize = 0;
         this.currentBatch = [];
         this.isResetting = false;
+        this.activeDrawers = new Set();
     }
 
-    addSegment(data) {
-        if (this.isResetting) return;
+    startDrawing(socketId) {
+        this.activeDrawers.add(socketId);
+    }
+
+    stopDrawing(socketId) {
+        this.activeDrawers.delete(socketId);
+    }
+
+    addSegment(data, socketId) {
+        if (this.isResetting) return false;
         
         if (data.type === 'draw') {
             this.currentBatch.push(data);
             this.batchSize++;
 
-            // Commit batch if it reaches threshold
             if (this.batchSize >= 50) {
                 this.commitBatch();
             }
+            return true;
         } else if (data.type === 'end') {
             this.commitBatch();
+            this.stopDrawing(socketId);
+            return true;
         }
+        return false;
     }
 
     commitBatch() {
@@ -78,6 +89,7 @@ class DrawingHistory {
         this.segments = [];
         this.currentBatch = [];
         this.batchSize = 0;
+        this.activeDrawers.clear();
     }
 
     getFullHistory() {
@@ -87,6 +99,10 @@ class DrawingHistory {
 
     hasDrawings() {
         return this.segments.length > 0 || this.currentBatch.length > 0;
+    }
+
+    hasActiveDrawers() {
+        return this.activeDrawers.size > 0;
     }
 }
 
@@ -112,16 +128,19 @@ io.on('connection', (socket) => {
 
     // Handle drawing data
     socket.on('draw', (data) => {
-        // Add to history and broadcast
-        drawingHistory.addSegment(data);
-        
-        // Only broadcast draw events
-        if (data.type === 'draw') {
-            socket.broadcast.emit('draw', data);
+        if (data.type === 'start') {
+            drawingHistory.startDrawing(socket.id);
+        } else {
+            // Process drawing segment
+            const wasProcessed = drawingHistory.addSegment(data, socket.id);
+            if (wasProcessed && data.type === 'draw') {
+                socket.broadcast.emit('draw', data);
+            }
         }
     });
 
     socket.on('disconnect', () => {
+        drawingHistory.stopDrawing(socket.id);
         console.log('A user disconnected');
     });
 });
@@ -133,7 +152,7 @@ const takeSnapshotAndReset = async () => {
     if (!drawingHistory.hasDrawings()) {
         console.log('No actual drawings to snapshot, skipping...');
         drawingHistory.clear();
-        io.emit('force-clear-canvas', { timestamp: Date.now() });
+        io.emit('force-clear-canvas', { forceEndDrawing: true });
         return;
     }
 
@@ -146,7 +165,7 @@ const takeSnapshotAndReset = async () => {
         
         // Clear history and notify clients immediately
         drawingHistory.clear();
-        io.emit('force-clear-canvas', { timestamp: Date.now() });
+        io.emit('force-clear-canvas', { forceEndDrawing: true });
 
         const now = new Date();
         const filename = `unframing_${now.toISOString().replace(/[:.]/g, '-')}`;
