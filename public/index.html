@@ -77,13 +77,13 @@
         // Handle window focus
         window.addEventListener('focus', () => {
             console.log('Page regained focus. Clearing canvas and requesting current state.');
-            
-            // Clear the canvas
-            ctx.fillStyle = '#efefef';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Request the latest canvas state from the server
-            socket.emit('request-state');
+            if (!isDrawing) {
+                // Clear the canvas
+                ctx.fillStyle = '#efefef';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                // Request the latest canvas state from the server
+                socket.emit('request-state');
+            }
         });
 
         // Handle visibility change
@@ -97,13 +97,7 @@
         socket.on('drawing-history', (history) => {
             history.forEach(data => {
                 if (data.type === 'draw') {
-                    ctx.beginPath();
-                    ctx.moveTo(data.x0, data.y0);
-                    ctx.lineTo(data.x1, data.y1);
-                    ctx.lineWidth = 3;
-                    ctx.lineCap = 'round';
-                    ctx.strokeStyle = data.color;
-                    ctx.stroke();
+                    drawLine(data.x0, data.y0, data.x1, data.y1, data.color);
                 }
             });
         });
@@ -117,13 +111,7 @@
             // Redraw current state
             history.forEach(data => {
                 if (data.type === 'draw') {
-                    ctx.beginPath();
-                    ctx.moveTo(data.x0, data.y0);
-                    ctx.lineTo(data.x1, data.y1);
-                    ctx.lineWidth = 3;
-                    ctx.lineCap = 'round';
-                    ctx.strokeStyle = data.color;
-                    ctx.stroke();
+                    drawLine(data.x0, data.y0, data.x1, data.y1, data.color);
                 }
             });
         });
@@ -139,6 +127,16 @@
             return { x, y };
         }
 
+        function drawLine(x0, y0, x1, y1, color) {
+            ctx.beginPath();
+            ctx.moveTo(x0, y0);
+            ctx.lineTo(x1, y1);
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = color;
+            ctx.stroke();
+        }
+
         function handleTouchStart(e) {
             const now = Date.now();
             // Only handle single-finger touches for drawing
@@ -149,6 +147,7 @@
                     const pos = getPosition(e);
                     lastX = pos.x;
                     lastY = pos.y;
+                    socket.emit('draw', { type: 'start' });
                     e.preventDefault(); // Prevent default only for drawing
                 }
             }
@@ -178,6 +177,7 @@
                 const pos = getPosition(e);
                 lastX = pos.x;
                 lastY = pos.y;
+                socket.emit('draw', { type: 'start' });
             }
         }
 
@@ -193,13 +193,7 @@
 
             const pos = getPosition(e);
 
-            ctx.beginPath();
-            ctx.moveTo(lastX, lastY);
-            ctx.lineTo(pos.x, pos.y);
-            ctx.lineWidth = 3;
-            ctx.lineCap = 'round';
-            ctx.strokeStyle = currentColor;
-            ctx.stroke();
+            drawLine(lastX, lastY, pos.x, pos.y, currentColor);
 
             // Emit line data
             socket.emit('draw', {
@@ -218,14 +212,29 @@
         // Receive drawing data from server
         socket.on('draw', (data) => {
             if (data.type === 'draw') {
-                ctx.beginPath();
-                ctx.moveTo(data.x0, data.y0);
-                ctx.lineTo(data.x1, data.y1);
-                ctx.lineWidth = 3;
-                ctx.lineCap = 'round';
-                ctx.strokeStyle = data.color;
-                ctx.stroke();
+                drawLine(data.x0, data.y0, data.x1, data.y1, data.color);
             }
+        });
+
+        // Handle forced canvas clear
+        socket.on('force-clear-canvas', (data) => {
+            if (!data) return;
+            
+            // Stop any active drawing
+            if (data.forceEndDrawing && isDrawing) {
+                isDrawing = false;
+                socket.emit('draw', { type: 'end' });
+            }
+            
+            // Force clear the canvas
+            ctx.fillStyle = '#efefef';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Reset all drawing states
+            lastX = 0;
+            lastY = 0;
+            
+            console.log('Canvas force cleared by server');
         });
 
         // Event listeners for mouse
@@ -245,24 +254,6 @@
             dot.addEventListener('click', (e) => {
                 currentColor = e.target.style.backgroundColor;
             });
-        });
-
-        // Handle forced canvas clear
-        socket.on('force-clear-canvas', (data) => {
-            if (!data) return;
-            
-            // Immediately stop any ongoing drawing
-            isDrawing = false;
-            
-            // Force clear the canvas
-            ctx.fillStyle = '#efefef';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // Reset all drawing states
-            lastX = 0;
-            lastY = 0;
-            
-            console.log('Canvas force cleared by server');
         });
     </script>
 </body>
