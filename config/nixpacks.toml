@@ -1,21 +1,24 @@
 [phases.setup]
 nixPkgs = [
-    "cairo",
-    "pkg-config",
     "python3",
-    "nodejs",
-    "libgcc"
-]
-
-[phases.build]
-cmds = [
-    "apt-get update",
-    "apt-get install -y python3 python3-pip",
-    "apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev"
+    "pkg-config",
+    "cairo",
+    "pango",
+    "libjpeg",
+    "giflib",
+    "librsvg",
+    "nodejs"
 ]
 
 [phases.install]
-cmds = ["npm ci"]
+cmds = [
+    "python3 -m ensurepip",
+    "npm config set python python3",
+    "npm ci"
+]
 
 [start]
 cmd = "node src/server.js"
+
+[variables]
+PYTHON = "python3"
