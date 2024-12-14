@@ -69,6 +69,7 @@
         let lastX = 0;
         let lastY = 0;
         let lastTouchTime = 0;
+        let canDraw = true;
 
         // Fill canvas with initial background color
         ctx.fillStyle = '#efefef';
@@ -77,13 +78,13 @@
         // Handle window focus
         window.addEventListener('focus', () => {
             console.log('Page regained focus. Clearing canvas and requesting current state.');
-            if (!isDrawing) {
-                // Clear the canvas
-                ctx.fillStyle = '#efefef';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                // Request the latest canvas state from the server
-                socket.emit('request-state');
-            }
+            
+            // Clear the canvas
+            ctx.fillStyle = '#efefef';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Request the latest canvas state from the server
+            socket.emit('request-state');
         });
 
         // Handle visibility change
@@ -138,6 +139,8 @@
         }
 
         function handleTouchStart(e) {
+            if (!canDraw) return;
+            
             const now = Date.now();
             // Only handle single-finger touches for drawing
             if (e.touches.length === 1) {
@@ -147,13 +150,14 @@
                     const pos = getPosition(e);
                     lastX = pos.x;
                     lastY = pos.y;
-                    socket.emit('draw', { type: 'start' });
                     e.preventDefault(); // Prevent default only for drawing
                 }
             }
         }
 
         function handleTouchMove(e) {
+            if (!canDraw) return;
+            
             // Only handle drawing for single-finger touches
             if (isDrawing && e.touches.length === 1) {
                 draw(e);
@@ -165,31 +169,28 @@
             // Immediately reset drawing state
             if (isDrawing) {
                 isDrawing = false;
-                socket.emit('draw', { type: 'end' });
                 // Record when the touch ended
                 lastTouchTime = Date.now();
             }
         }
 
         function startDrawing(e) {
+            if (!canDraw) return;
+            
             if (e.type.includes('mouse')) {
                 isDrawing = true;
                 const pos = getPosition(e);
                 lastX = pos.x;
                 lastY = pos.y;
-                socket.emit('draw', { type: 'start' });
             }
         }
 
         function stopDrawing() {
-            if (isDrawing) {
-                isDrawing = false;
-                socket.emit('draw', { type: 'end' });
-            }
+            isDrawing = false;
         }
 
         function draw(e) {
-            if (!isDrawing) return;
+            if (!isDrawing || !canDraw) return;
 
             const pos = getPosition(e);
 
@@ -217,22 +218,23 @@
         });
 
         // Handle forced canvas clear
-        socket.on('force-clear-canvas', (data) => {
-            if (!data) return;
-            
-            // Stop any active drawing
-            if (data.forceEndDrawing && isDrawing) {
-                isDrawing = false;
-                socket.emit('draw', { type: 'end' });
-            }
+        socket.on('force-clear-canvas', () => {
+            // Immediately stop any drawing and prevent new drawing until next interaction
+            isDrawing = false;
+            canDraw = false;
             
             // Force clear the canvas
             ctx.fillStyle = '#efefef';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            // Reset all drawing states
+            // Reset drawing states
             lastX = 0;
             lastY = 0;
+            
+            // Re-enable drawing on next touch/click
+            setTimeout(() => {
+                canDraw = true;
+            }, 100);
             
             console.log('Canvas force cleared by server');
         });
