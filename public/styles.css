@@ -1,0 +1,43 @@
+body, html {
+    margin: 0;
+    padding: 0;
+    overflow: auto;
+    background: #efefef;
+    height: 100%;
+}
+
+.canvas-container {
+    width: 1440px;
+    height: 760px;
+    position: relative;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+canvas {
+    display: block;
+    background: #efefef;
+    width: 1440px;
+    height: 760px;
+}
+
+#colors {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    gap: 10px;
+    z-index: 1000;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.8);
+    border-radius: 20px;
+}
+
+.color-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid #fff;
+    box-shadow: 0 0 3px rgba(0,0,0,0.15);
+}
