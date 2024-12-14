@@ -11,7 +11,6 @@
             overflow: auto;
             background: #efefef;
             height: 100%;
-            touch-action: none;
         }
         .canvas-container {
             width: 1440px;
@@ -19,7 +18,7 @@
             position: relative;
             overflow: auto;
             -webkit-overflow-scrolling: touch;
-            touch-action: pan-x pan-y;
+            touch-action: manipulation;
         }
         canvas {
             display: block;
@@ -66,15 +65,12 @@
     <script>
         const socket = io(); // Connect to the server
         const canvas = document.getElementById('drawingCanvas');
-        const canvasContainer = document.querySelector('.canvas-container');
         const ctx = canvas.getContext('2d');
         let isDrawing = false;
         let isPanning = false;
         let currentColor = '#1d1d1d';
         let lastX = 0;
         let lastY = 0;
-        let lastScrollX = 0;
-        let lastScrollY = 0;
 
         // Fill canvas with initial background color
         ctx.fillStyle = '#efefef';
@@ -147,16 +143,12 @@
 
         function handleTouchStart(e) {
             if (e.touches.length === 2) {
-                // Two-finger touch - enable panning
+                console.log('Two finger touch detected');  // Debug log
                 isPanning = true;
                 isDrawing = false;
-                lastScrollX = e.touches[0].clientX;
-                lastScrollY = e.touches[0].clientY;
                 e.preventDefault();
-            } else if (e.touches.length === 1) {
-                // Single-finger touch - enable drawing
+            } else if (e.touches.length === 1 && !isPanning) {
                 isDrawing = true;
-                isPanning = false;
                 const pos = getPosition(e);
                 lastX = pos.x;
                 lastY = pos.y;
@@ -165,23 +157,18 @@
 
         function handleTouchMove(e) {
             if (isPanning && e.touches.length === 2) {
-                // Handle two-finger panning
-                const deltaX = e.touches[0].clientX - lastScrollX;
-                const deltaY = e.touches[0].clientY - lastScrollY;
-                canvasContainer.scrollLeft -= deltaX;
-                canvasContainer.scrollTop -= deltaY;
-                lastScrollX = e.touches[0].clientX;
-                lastScrollY = e.touches[0].clientY;
+                console.log('Two finger move detected');  // Debug log
                 e.preventDefault();
+                return;  // Let default scrolling behavior take over
             } else if (isDrawing && e.touches.length === 1) {
-                // Handle drawing
                 draw(e);
                 e.preventDefault();
             }
         }
 
         function handleTouchEnd(e) {
-            if (isPanning && e.touches.length < 2) {
+            console.log('Touch end, remaining touches:', e.touches.length);  // Debug log
+            if (e.touches.length < 2) {
                 isPanning = false;
             }
             if (isDrawing) {
@@ -252,7 +239,7 @@
         canvas.addEventListener('mouseup', stopDrawing);
         canvas.addEventListener('mouseout', stopDrawing);
 
-        // Event listeners for touch devices
+        // Event listeners for touch devices with passive false
         canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
         canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
         canvas.addEventListener('touchend', handleTouchEnd);
@@ -280,8 +267,6 @@
             // Reset all drawing states
             lastX = 0;
             lastY = 0;
-            lastScrollX = 0;
-            lastScrollY = 0;
             
             console.log('Canvas force cleared by server');
         });
