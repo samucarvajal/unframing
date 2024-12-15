@@ -5,6 +5,7 @@ const cloudinary = require('../config/cloudinary');
 const takeSnapshot = async (drawingHistory, snapshotDir) => {
     console.log('Taking snapshot and resetting canvas...');
 
+    if (!drawingHistory.hasDrawings()) {
         console.log('No actual drawings to snapshot, skipping...');
         drawingHistory.clear();
         return null;
@@ -37,6 +38,7 @@ const takeSnapshot = async (drawingHistory, snapshotDir) => {
             }
         });
 
+        // Save locally
         await new Promise((resolve, reject) => {
             const out = fs.createWriteStream(tempPath);
             const stream = canvas.createPNGStream();
@@ -45,6 +47,7 @@ const takeSnapshot = async (drawingHistory, snapshotDir) => {
             out.on('error', reject);
         });
 
+        // Upload to Cloudinary
         const result = await cloudinary.uploader.upload(tempPath, {
             folder: 'unframing',
             public_id: filename,
