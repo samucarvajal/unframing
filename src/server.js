@@ -3,6 +3,7 @@ const app = express();
 const http = require('http').createServer(app);
 const { Server } = require('socket.io');
 const cloudinary = require('cloudinary').v2;
+require('dotenv').config();
 const io = new Server(http, {
     cors: {
         origin: '*',
@@ -14,9 +15,9 @@ const fs = require('fs');
 
 // Configure Cloudinary
 cloudinary.config({ 
-    cloud_name: 'du4xsnsjd', 
-    api_key: '211798632235737', 
-    api_secret: 'iKEjrcFjO4WYrqILrrcWqwz55wc'
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
 console.log('Server script is starting...');
