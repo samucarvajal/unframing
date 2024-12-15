@@ -42,32 +42,6 @@ if (!fs.existsSync(snapshotDir)) {
 // Serve static files from the 'public' directory
 app.use(express.static('public'));
 
-// Add rate limiter
-const rateLimiters = {};
-
-const createRateLimiter = (maxEvents, timeWindow) => {
-    return (socketId) => {
-        const now = Date.now();
-        if (!rateLimiters[socketId]) {
-            rateLimiters[socketId] = [];
-        }
-
-        // Keep only events within the time window
-        rateLimiters[socketId] = rateLimiters[socketId].filter(
-            (timestamp) => now - timestamp < timeWindow
-        );
-
-        // Add the current event timestamp
-        rateLimiters[socketId].push(now);
-
-        // Check if the number of events exceeds the limit
-        return rateLimiters[socketId].length <= maxEvents;
-    };
-};
-
-// Allow up to 60 events per second per user
-const isWithinRateLimit = createRateLimiter(60, 1000);
-
 class DrawingHistory {
     constructor() {
         this.segments = [];
@@ -153,13 +127,8 @@ io.on('connection', (socket) => {
         socket.emit('current-state', drawingHistory.getFullHistory());
     });
 
-    // Handle drawing data with rate limiting
+    // Handle drawing data
     socket.on('draw', (data) => {
-        if (!isWithinRateLimit(socket.id)) {
-            // Silently drop events exceeding the limit
-            return;
-        }
-
         const wasProcessed = drawingHistory.addSegment(data, socket.id);
         if (wasProcessed && data.type === 'draw') {
             socket.broadcast.emit('draw', data);
@@ -167,7 +136,6 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        delete rateLimiters[socket.id]; // Clean up rate limiter memory
         drawingHistory.stopDrawing(socket.id);
         console.log('A user disconnected');
     });
