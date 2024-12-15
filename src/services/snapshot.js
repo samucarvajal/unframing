@@ -2,19 +2,22 @@ const fs = require('fs');
 const { createCanvas } = require('canvas');
 const cloudinary = require('../config/cloudinary');
 
-const takeSnapshot = async (drawingHistory, snapshotDir) => {
+const takeSnapshot = async (drawingHistory, snapshotDir, io) => {
     console.log('Taking snapshot and resetting canvas...');
 
     if (!drawingHistory.hasDrawings()) {
         console.log('No actual drawings to snapshot, skipping...');
         drawingHistory.clear();
+        io.emit('force-clear-canvas', { forceEndDrawing: true }); // Notify all clients
         return null;
     }
 
     try {
         drawingHistory.isResetting = true;
+
         const historyToSave = drawingHistory.getFullHistory();
         drawingHistory.clear();
+        io.emit('force-clear-canvas', { forceEndDrawing: true }); // Notify all clients
 
         const now = new Date();
         const filename = `unframing_${now.toISOString().replace(/[:.]/g, '-')}`;
