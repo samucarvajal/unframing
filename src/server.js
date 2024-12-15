@@ -46,7 +46,7 @@ initializeSocket(io, drawingHistory);
 
 // Schedule snapshots every minute
 setInterval(async () => {
-    await takeSnapshot(drawingHistory, snapshotDir);
+    await takeSnapshot(drawingHistory, snapshotDir, io); // Pass io for real-time canvas clearing
 }, 60 * 1000);
 
 // Health check endpoint
