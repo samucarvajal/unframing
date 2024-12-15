@@ -20,6 +20,13 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
+// Debugging: Log Cloudinary configuration
+console.log("Cloudinary Config:", {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+    apiKey: process.env.CLOUDINARY_API_KEY,
+    apiSecret: process.env.CLOUDINARY_API_SECRET
+});
+
 console.log('Server script is starting...');
 
 // Add cache control headers
