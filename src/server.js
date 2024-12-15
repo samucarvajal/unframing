@@ -4,23 +4,20 @@ const http = require('http').createServer(app);
 const { Server } = require('socket.io');
 const cloudinary = require('cloudinary').v2;
 require('dotenv').config();
-const rateLimit = require('socket.io-rate-limit');
-const fs = require('fs');
-
-// Initialize Socket.IO
 const io = new Server(http, {
     cors: {
         origin: '*',
-        methods: ['GET', 'POST'],
+        methods: ['GET', 'POST']
     },
-    transports: ['websocket', 'polling'],
+    transports: ['websocket', 'polling']
 });
+const fs = require('fs');
 
 // Configure Cloudinary
-cloudinary.config({
+cloudinary.config({ 
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
+    api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
 console.log('Server script is starting...');
@@ -31,7 +28,7 @@ app.use((req, res, next) => {
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0',
-        'Surrogate-Control': 'no-store',
+        'Surrogate-Control': 'no-store'
     });
     next();
 });
@@ -44,6 +41,32 @@ if (!fs.existsSync(snapshotDir)) {
 
 // Serve static files from the 'public' directory
 app.use(express.static('public'));
+
+// Add rate limiter
+const rateLimiters = {};
+
+const createRateLimiter = (maxEvents, timeWindow) => {
+    return (socketId) => {
+        const now = Date.now();
+        if (!rateLimiters[socketId]) {
+            rateLimiters[socketId] = [];
+        }
+
+        // Keep only events within the time window
+        rateLimiters[socketId] = rateLimiters[socketId].filter(
+            (timestamp) => now - timestamp < timeWindow
+        );
+
+        // Add the current event timestamp
+        rateLimiters[socketId].push(now);
+
+        // Check if the number of events exceeds the limit
+        return rateLimiters[socketId].length <= maxEvents;
+    };
+};
+
+// Allow up to 60 events per second per user
+const isWithinRateLimit = createRateLimiter(60, 1000);
 
 class DrawingHistory {
     constructor() {
@@ -64,7 +87,7 @@ class DrawingHistory {
 
     addSegment(data, socketId) {
         if (this.isResetting) return false;
-
+        
         if (data.type === 'draw') {
             this.currentBatch.push(data);
             this.batchSize++;
@@ -118,20 +141,9 @@ app.get('/health', (req, res) => {
     res.status(200).send('OK');
 });
 
-// Apply silent rate limiting middleware
-io.use(
-    rateLimit({
-        prefix: 'draw-events',
-        rate: 60, // Allow up to 60 events per second
-        burst: 120, // Allow short bursts up to 120 events per second
-        interval: 1000, // Monitor event frequency over 1 second
-        penalty: 0, // Silently drop excess events without feedback
-    })
-);
-
 // Handle WebSocket connections
 io.on('connection', (socket) => {
-    console.log('A user connected:', socket.id);
+    console.log('A user connected');
 
     // Send the drawing history to the newly connected user
     socket.emit('drawing-history', drawingHistory.getFullHistory());
@@ -141,8 +153,13 @@ io.on('connection', (socket) => {
         socket.emit('current-state', drawingHistory.getFullHistory());
     });
 
-    // Handle drawing data
+    // Handle drawing data with rate limiting
     socket.on('draw', (data) => {
+        if (!isWithinRateLimit(socket.id)) {
+            // Silently drop events exceeding the limit
+            return;
+        }
+
         const wasProcessed = drawingHistory.addSegment(data, socket.id);
         if (wasProcessed && data.type === 'draw') {
             socket.broadcast.emit('draw', data);
@@ -150,15 +167,16 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
+        delete rateLimiters[socket.id]; // Clean up rate limiter memory
         drawingHistory.stopDrawing(socket.id);
-        console.log('A user disconnected:', socket.id);
+        console.log('A user disconnected');
     });
 });
 
 // Take snapshot and reset function
 const takeSnapshotAndReset = async () => {
     console.log('Taking snapshot and resetting canvas...');
-
+    
     if (!drawingHistory.hasDrawings()) {
         console.log('No actual drawings to snapshot, skipping...');
         drawingHistory.clear();
@@ -169,10 +187,10 @@ const takeSnapshotAndReset = async () => {
     try {
         // Set resetting flag
         drawingHistory.isResetting = true;
-
+        
         // Store current history for snapshot
         const historyToSave = drawingHistory.getFullHistory();
-
+        
         // Clear history and notify clients immediately
         drawingHistory.clear();
         io.emit('force-clear-canvas', { forceEndDrawing: true });
@@ -203,7 +221,7 @@ const takeSnapshotAndReset = async () => {
         // First save locally
         const out = fs.createWriteStream(tempPath);
         const stream = canvas.createPNGStream();
-
+        
         await new Promise((resolve, reject) => {
             stream.pipe(out);
             out.on('finish', resolve);
@@ -213,17 +231,17 @@ const takeSnapshotAndReset = async () => {
         // Then upload to Cloudinary
         const result = await cloudinary.uploader.upload(tempPath, {
             folder: 'unframing',
-            public_id: filename,
+            public_id: filename
         });
 
         console.log(`Snapshot uploaded to Cloudinary: ${result.secure_url}`);
 
         // Delete local file after upload
         fs.unlinkSync(tempPath);
-
+        
         // Reset flag after everything is done
         drawingHistory.isResetting = false;
-
+        
         console.log('Canvas reset complete');
     } catch (error) {
         console.error('Error taking snapshot:', error);
@@ -235,16 +253,17 @@ const takeSnapshotAndReset = async () => {
 // Schedule snapshots to run every minute (for testing)
 const scheduleSnapshots = () => {
     console.log('Setting up one-minute interval for snapshots...');
-
+    
     // Log the next scheduled time
     const nextReset = new Date(Date.now() + 60 * 1000);
     console.log(`Next reset scheduled for: ${nextReset.toLocaleTimeString()}`);
-
+    
     // Set up interval for snapshots every minute
     setInterval(() => {
         console.log('Timer triggered, attempting snapshot and reset...');
+        // Force immediate clear before taking snapshot
         takeSnapshotAndReset();
-
+        
         // Log next scheduled time
         const nextReset = new Date(Date.now() + 60 * 1000);
         console.log(`Next reset scheduled for: ${nextReset.toLocaleTimeString()}`);
