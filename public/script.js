@@ -65,7 +65,10 @@ function handleTouchStart(e) {
 
 function handleTouchMove(e) {
     if (e.touches.length > 1) {
-        isDrawing = false;
+        if (isDrawing) {
+            isDrawing = false;
+            socket.emit('draw', { type: 'end' });
+        }
         return;
     }
     
@@ -88,7 +91,7 @@ function handleTouchMove(e) {
     }
 }
 
-function handleTouchEnd(e) {
+function handleTouchEnd() {
     if (isDrawing) {
         isDrawing = false;
         socket.emit('draw', { type: 'end' });
@@ -129,19 +132,6 @@ function stopDrawing() {
         isDrawing = false;
         socket.emit('draw', { type: 'end' });
     }
-}
-
-// Improved color selection handling
-function handleColorSelect(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    currentColor = e.target.style.backgroundColor;
-    
-    // Visual feedback
-    document.querySelectorAll('.color-dot').forEach(dot => {
-        dot.classList.remove('selected');
-    });
-    e.target.classList.add('selected');
 }
 
 // Socket event handlers
@@ -196,8 +186,12 @@ canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
 canvas.addEventListener('touchend', handleTouchEnd);
 canvas.addEventListener('touchcancel', handleTouchEnd);
 
-// Improved color selection event listeners
+// Simplified color selection
 document.querySelectorAll('.color-dot').forEach(dot => {
-    dot.addEventListener('touchstart', handleColorSelect, { passive: false });
-    dot.addEventListener('mousedown', handleColorSelect);
+    ['click', 'touchstart'].forEach(eventName => {
+        dot.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            currentColor = e.target.style.backgroundColor;
+        });
+    });
 });
