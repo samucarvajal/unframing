@@ -5,15 +5,10 @@ const socket = io();
 const canvas = document.getElementById('drawingCanvas');
 const ctx = canvas.getContext('2d');
 let isDrawing = false;
-let isPanning = false;
 let currentColor = '#1d1d1d';
 let lastX = 0;
 let lastY = 0;
 let canDraw = true;
-let touchStartTime = 0;
-const TOUCH_MOVE_THRESHOLD = 5;
-let initialTouchX = 0;
-let initialTouchY = 0;
 
 // Fill canvas with initial background color
 ctx.fillStyle = '#efefef';
@@ -59,47 +54,26 @@ function drawLine(x0, y0, x1, y1, color) {
 function handleTouchStart(e) {
     if (!canDraw) return;
     
-    touchStartTime = Date.now();
-    const pos = getPosition(e);
-    
-    initialTouchX = pos.x;
-    initialTouchY = pos.y;
-    lastX = pos.x;
-    lastY = pos.y;
-    
-    if (e.touches.length > 1) {
-        isDrawing = false;
-        isPanning = true;
+    // Only start drawing if it's a single finger touch
+    if (e.touches.length === 1) {
+        isDrawing = true;
+        const pos = getPosition(e);
+        lastX = pos.x;
+        lastY = pos.y;
+        e.preventDefault(); // Prevent default only for single-finger drawing
     }
 }
 
 function handleTouchMove(e) {
-    if (!canDraw || e.touches.length > 1) {
+    // If it's two fingers, let the default scrolling/panning happen
+    if (e.touches.length > 1) {
         isDrawing = false;
         return;
     }
     
-    const pos = getPosition(e);
-    const dx = pos.x - initialTouchX;
-    const dy = pos.y - initialTouchY;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    if (!isDrawing && !isPanning) {
-        const timeDiff = Date.now() - touchStartTime;
-        const speed = distance / timeDiff;
-        
-        if (distance > TOUCH_MOVE_THRESHOLD) {
-            if (Math.abs(dx) > Math.abs(dy) || speed > 0.5) {
-                isPanning = true;
-                return;
-            } else {
-                isDrawing = true;
-            }
-        }
-    }
-    
-    if (isDrawing) {
-        e.preventDefault();
+    // If it's one finger and we're in drawing mode, draw
+    if (isDrawing && e.touches.length === 1) {
+        const pos = getPosition(e);
         drawLine(lastX, lastY, pos.x, pos.y, currentColor);
         
         socket.emit('draw', {
@@ -113,14 +87,13 @@ function handleTouchMove(e) {
         
         lastX = pos.x;
         lastY = pos.y;
+        e.preventDefault(); // Prevent scrolling while drawing
     }
 }
 
 function handleTouchEnd(e) {
-    isDrawing = false;
-    isPanning = false;
-    
-    if (e.touches.length === 0) {
+    if (isDrawing) {
+        isDrawing = false;
         socket.emit('draw', { type: 'end' });
     }
 }
@@ -208,7 +181,7 @@ canvas.addEventListener('mousemove', draw);
 canvas.addEventListener('mouseup', stopDrawing);
 canvas.addEventListener('mouseout', stopDrawing);
 
-canvas.addEventListener('touchstart', handleTouchStart, { passive: true });
+canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
 canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
 canvas.addEventListener('touchend', handleTouchEnd);
 canvas.addEventListener('touchcancel', handleTouchEnd);
