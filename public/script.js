@@ -55,7 +55,7 @@ socket.on('draw', (data) => {
     ctx.moveTo(data.start.x, data.start.y);
     ctx.lineTo(data.end.x, data.end.y);
     ctx.strokeStyle = data.color;
-    ctx.lineWidth = data.lineWidth;
+    ctx.lineWidth = 3; // Fixed brush size
     ctx.stroke();
 });
 
@@ -65,7 +65,7 @@ function draw(pos) {
         start: { x: lastX, y: lastY },
         end: { x: pos.x, y: pos.y },
         color: currentColor,
-        lineWidth: 2
+        lineWidth: 3 // Fixed brush size
     };
 
     ctx.beginPath();
@@ -110,6 +110,13 @@ canvas.addEventListener('mousemove', (e) => {
 
 canvas.addEventListener('mouseup', stopDrawing);
 canvas.addEventListener('mouseout', stopDrawing);
+
+// Color selection logic
+document.querySelectorAll('.color-dot').forEach(dot => {
+    dot.addEventListener('click', () => {
+        currentColor = dot.style.backgroundColor;
+    });
+});
 
 // Flags for gesture states
 // Handle touch start
