@@ -50,28 +50,25 @@ function drawLine(x0, y0, x1, y1, color) {
     ctx.stroke();
 }
 
-// Touch handlers
+// Touch handlers for canvas
 function handleTouchStart(e) {
     if (!canDraw) return;
     
-    // Only start drawing if it's a single finger touch
     if (e.touches.length === 1) {
         isDrawing = true;
         const pos = getPosition(e);
         lastX = pos.x;
         lastY = pos.y;
-        e.preventDefault(); // Prevent default only for single-finger drawing
+        e.preventDefault();
     }
 }
 
 function handleTouchMove(e) {
-    // If it's two fingers, let the default scrolling/panning happen
     if (e.touches.length > 1) {
         isDrawing = false;
         return;
     }
     
-    // If it's one finger and we're in drawing mode, draw
     if (isDrawing && e.touches.length === 1) {
         const pos = getPosition(e);
         drawLine(lastX, lastY, pos.x, pos.y, currentColor);
@@ -87,7 +84,7 @@ function handleTouchMove(e) {
         
         lastX = pos.x;
         lastY = pos.y;
-        e.preventDefault(); // Prevent scrolling while drawing
+        e.preventDefault();
     }
 }
 
@@ -134,6 +131,19 @@ function stopDrawing() {
     }
 }
 
+// Improved color selection handling
+function handleColorSelect(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    currentColor = e.target.style.backgroundColor;
+    
+    // Visual feedback
+    document.querySelectorAll('.color-dot').forEach(dot => {
+        dot.classList.remove('selected');
+    });
+    e.target.classList.add('selected');
+}
+
 // Socket event handlers
 socket.on('drawing-history', (history) => {
     history.forEach(data => {
@@ -175,7 +185,7 @@ socket.on('force-clear-canvas', () => {
     }, 100);
 });
 
-// Event listeners
+// Event listeners for canvas
 canvas.addEventListener('mousedown', startDrawing);
 canvas.addEventListener('mousemove', draw);
 canvas.addEventListener('mouseup', stopDrawing);
@@ -186,9 +196,8 @@ canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
 canvas.addEventListener('touchend', handleTouchEnd);
 canvas.addEventListener('touchcancel', handleTouchEnd);
 
-// Color selection
+// Improved color selection event listeners
 document.querySelectorAll('.color-dot').forEach(dot => {
-    dot.addEventListener('click', (e) => {
-        currentColor = e.target.style.backgroundColor;
-    });
+    dot.addEventListener('touchstart', handleColorSelect, { passive: false });
+    dot.addEventListener('mousedown', handleColorSelect);
 });
