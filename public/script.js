@@ -5,11 +5,15 @@ const socket = io();
 const canvas = document.getElementById('drawingCanvas');
 const ctx = canvas.getContext('2d');
 let isDrawing = false;
+let isPanning = false;
 let currentColor = '#1d1d1d';
 let lastX = 0;
 let lastY = 0;
-let lastTouchTime = 0;
 let canDraw = true;
+let touchStartTime = 0;
+const TOUCH_MOVE_THRESHOLD = 5;
+let initialTouchX = 0;
+let initialTouchY = 0;
 
 // Fill canvas with initial background color
 ctx.fillStyle = '#efefef';
@@ -17,13 +21,8 @@ ctx.fillRect(0, 0, canvas.width, canvas.height);
 
 // Handle window focus
 window.addEventListener('focus', () => {
-    console.log('Page regained focus. Clearing canvas and requesting current state.');
-    
-    // Clear the canvas
     ctx.fillStyle = '#efefef';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Request the latest canvas state from the server
     socket.emit('request-state');
 });
 
@@ -34,29 +33,7 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
-// Handle drawing history
-socket.on('drawing-history', (history) => {
-    history.forEach(data => {
-        if (data.type === 'draw') {
-            drawLine(data.x0, data.y0, data.x1, data.y1, data.color);
-        }
-    });
-});
-
-// Handle current state update
-socket.on('current-state', (history) => {
-    // Clear canvas
-    ctx.fillStyle = '#efefef';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // Redraw current state
-    history.forEach(data => {
-        if (data.type === 'draw') {
-            drawLine(data.x0, data.y0, data.x1, data.y1, data.color);
-        }
-    });
-});
-
+// Drawing functions
 function getPosition(e) {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
@@ -78,65 +55,92 @@ function drawLine(x0, y0, x1, y1, color) {
     ctx.stroke();
 }
 
+// Touch handlers
 function handleTouchStart(e) {
     if (!canDraw) return;
     
-    const now = Date.now();
-    // Only handle single-finger touches for drawing
-    if (e.touches.length === 1) {
-        // If the last touch ended very recently, don't start drawing yet
-        if (now - lastTouchTime > 100) {
-            isDrawing = true;
-            const pos = getPosition(e);
-            lastX = pos.x;
-            lastY = pos.y;
-            e.preventDefault(); // Prevent default only for drawing
-        }
+    touchStartTime = Date.now();
+    const pos = getPosition(e);
+    
+    initialTouchX = pos.x;
+    initialTouchY = pos.y;
+    lastX = pos.x;
+    lastY = pos.y;
+    
+    if (e.touches.length > 1) {
+        isDrawing = false;
+        isPanning = true;
     }
 }
 
 function handleTouchMove(e) {
-    if (!canDraw) return;
-    
-    // Only handle drawing for single-finger touches
-    if (isDrawing && e.touches.length === 1) {
-        draw(e);
-        e.preventDefault(); // Prevent default only for drawing
-    }
-}
-
-function handleTouchEnd(e) {
-    // Immediately reset drawing state
-    if (isDrawing) {
+    if (!canDraw || e.touches.length > 1) {
         isDrawing = false;
-        // Record when the touch ended
-        lastTouchTime = Date.now();
+        return;
     }
-}
-
-function startDrawing(e) {
-    if (!canDraw) return;
     
-    if (e.type.includes('mouse')) {
-        isDrawing = true;
-        const pos = getPosition(e);
+    const pos = getPosition(e);
+    const dx = pos.x - initialTouchX;
+    const dy = pos.y - initialTouchY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (!isDrawing && !isPanning) {
+        const timeDiff = Date.now() - touchStartTime;
+        const speed = distance / timeDiff;
+        
+        if (distance > TOUCH_MOVE_THRESHOLD) {
+            if (Math.abs(dx) > Math.abs(dy) || speed > 0.5) {
+                isPanning = true;
+                return;
+            } else {
+                isDrawing = true;
+            }
+        }
+    }
+    
+    if (isDrawing) {
+        e.preventDefault();
+        drawLine(lastX, lastY, pos.x, pos.y, currentColor);
+        
+        socket.emit('draw', {
+            type: 'draw',
+            x0: lastX,
+            y0: lastY,
+            x1: pos.x,
+            y1: pos.y,
+            color: currentColor
+        });
+        
         lastX = pos.x;
         lastY = pos.y;
     }
 }
 
-function stopDrawing() {
+function handleTouchEnd(e) {
     isDrawing = false;
+    isPanning = false;
+    
+    if (e.touches.length === 0) {
+        socket.emit('draw', { type: 'end' });
+    }
+}
+
+// Mouse handlers
+function startDrawing(e) {
+    if (!canDraw || e.type.includes('touch')) return;
+    
+    isDrawing = true;
+    const pos = getPosition(e);
+    lastX = pos.x;
+    lastY = pos.y;
 }
 
 function draw(e) {
-    if (!isDrawing || !canDraw) return;
+    if (!isDrawing || !canDraw || e.type.includes('touch')) return;
 
     const pos = getPosition(e);
-
     drawLine(lastX, lastY, pos.x, pos.y, currentColor);
 
-    // Emit line data
     socket.emit('draw', {
         type: 'draw',
         x0: lastX,
@@ -150,43 +154,61 @@ function draw(e) {
     lastY = pos.y;
 }
 
-// Receive drawing data from server
+function stopDrawing() {
+    if (isDrawing) {
+        isDrawing = false;
+        socket.emit('draw', { type: 'end' });
+    }
+}
+
+// Socket event handlers
+socket.on('drawing-history', (history) => {
+    history.forEach(data => {
+        if (data.type === 'draw') {
+            drawLine(data.x0, data.y0, data.x1, data.y1, data.color);
+        }
+    });
+});
+
+socket.on('current-state', (history) => {
+    ctx.fillStyle = '#efefef';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    history.forEach(data => {
+        if (data.type === 'draw') {
+            drawLine(data.x0, data.y0, data.x1, data.y1, data.color);
+        }
+    });
+});
+
 socket.on('draw', (data) => {
     if (data.type === 'draw') {
         drawLine(data.x0, data.y0, data.x1, data.y1, data.color);
     }
 });
 
-// Handle forced canvas clear
 socket.on('force-clear-canvas', () => {
-    // Immediately stop any drawing and prevent new drawing until next interaction
     isDrawing = false;
     canDraw = false;
     
-    // Force clear the canvas
     ctx.fillStyle = '#efefef';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // Reset drawing states
     lastX = 0;
     lastY = 0;
     
-    // Re-enable drawing on next touch/click
     setTimeout(() => {
         canDraw = true;
     }, 100);
-    
-    console.log('Canvas force cleared by server');
 });
 
-// Event listeners for mouse
+// Event listeners
 canvas.addEventListener('mousedown', startDrawing);
 canvas.addEventListener('mousemove', draw);
 canvas.addEventListener('mouseup', stopDrawing);
 canvas.addEventListener('mouseout', stopDrawing);
 
-// Event listeners for touch devices
-canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+canvas.addEventListener('touchstart', handleTouchStart, { passive: true });
 canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
 canvas.addEventListener('touchend', handleTouchEnd);
 canvas.addEventListener('touchcancel', handleTouchEnd);
