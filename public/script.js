@@ -18,7 +18,7 @@ ctx.fillRect(0, 0, canvas.width, canvas.height);
 // Handle window focus
 window.addEventListener('focus', () => {
     console.log('Page regained focus. Clearing canvas and requesting current state.');
-    
+
     // Clear the canvas
     ctx.fillStyle = '#efefef';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -48,7 +48,7 @@ socket.on('current-state', (history) => {
     // Clear canvas
     ctx.fillStyle = '#efefef';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
+
     // Redraw current state
     history.forEach(data => {
         if (data.type === 'draw') {
@@ -81,8 +81,8 @@ function drawLine(x0, y0, x1, y1, color) {
 // Handle touch interactions
 function handleTouchStart(e) {
     if (!canDraw) return;
-    const now = Date.now();
 
+    const now = Date.now();
     // Only handle single-finger touches for drawing
     if (e.touches.length === 1) {
         // If the last touch ended very recently, don't start drawing yet
@@ -136,18 +136,17 @@ function draw(e) {
 
     const pos = getPosition(e);
 
+    // Draw locally
     drawLine(lastX, lastY, pos.x, pos.y, currentColor);
 
     // Emit line data
-    throttle(() => {
-        socket.emit('draw', {
-            type: 'draw',
-            x0: lastX,
-            y0: lastY,
-            x1: pos.x,
-            y1: pos.y,
-            color: currentColor
-        });
+    socket.emit('draw', {
+        type: 'draw',
+        x0: lastX,
+        y0: lastY,
+        x1: pos.x,
+        y1: pos.y,
+        color: currentColor
     });
 
     lastX = pos.x;
@@ -166,20 +165,20 @@ socket.on('force-clear-canvas', () => {
     // Immediately stop any drawing and prevent new drawing until next interaction
     isDrawing = false;
     canDraw = false;
-    
+
     // Force clear the canvas
     ctx.fillStyle = '#efefef';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
+
     // Reset drawing states
     lastX = 0;
     lastY = 0;
-    
+
     // Re-enable drawing on next touch/click
     setTimeout(() => {
         canDraw = true;
     }, 100);
-    
+
     console.log('Canvas force cleared by server');
 });
 
@@ -201,12 +200,3 @@ document.querySelectorAll('.color-dot').forEach(dot => {
         currentColor = e.target.style.backgroundColor;
     });
 });
-
-// Throttling function for better performance
-function throttle(callback) {
-    const now = Date.now();
-    if (!lastTouchTime || now - lastTouchTime >= 16) {
-        callback();
-        lastTouchTime = now;
-    }
-}
