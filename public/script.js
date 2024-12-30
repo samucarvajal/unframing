@@ -18,7 +18,7 @@ ctx.fillRect(0, 0, canvas.width, canvas.height);
 // Handle window focus
 window.addEventListener('focus', () => {
     console.log('Page regained focus. Clearing canvas and requesting current state.');
-
+    
     // Clear the canvas
     ctx.fillStyle = '#efefef';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -48,7 +48,7 @@ socket.on('current-state', (history) => {
     // Clear canvas
     ctx.fillStyle = '#efefef';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
+    
     // Redraw current state
     history.forEach(data => {
         if (data.type === 'draw') {
@@ -78,10 +78,9 @@ function drawLine(x0, y0, x1, y1, color) {
     ctx.stroke();
 }
 
-// Handle touch interactions
 function handleTouchStart(e) {
     if (!canDraw) return;
-
+    
     const now = Date.now();
     // Only handle single-finger touches for drawing
     if (e.touches.length === 1) {
@@ -98,7 +97,7 @@ function handleTouchStart(e) {
 
 function handleTouchMove(e) {
     if (!canDraw) return;
-
+    
     // Only handle drawing for single-finger touches
     if (isDrawing && e.touches.length === 1) {
         draw(e);
@@ -115,10 +114,9 @@ function handleTouchEnd(e) {
     }
 }
 
-// Handle mouse interactions
 function startDrawing(e) {
     if (!canDraw) return;
-
+    
     if (e.type.includes('mouse')) {
         isDrawing = true;
         const pos = getPosition(e);
@@ -136,7 +134,6 @@ function draw(e) {
 
     const pos = getPosition(e);
 
-    // Draw locally
     drawLine(lastX, lastY, pos.x, pos.y, currentColor);
 
     // Emit line data
@@ -165,20 +162,20 @@ socket.on('force-clear-canvas', () => {
     // Immediately stop any drawing and prevent new drawing until next interaction
     isDrawing = false;
     canDraw = false;
-
+    
     // Force clear the canvas
     ctx.fillStyle = '#efefef';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
+    
     // Reset drawing states
     lastX = 0;
     lastY = 0;
-
+    
     // Re-enable drawing on next touch/click
     setTimeout(() => {
         canDraw = true;
     }, 100);
-
+    
     console.log('Canvas force cleared by server');
 });
 
