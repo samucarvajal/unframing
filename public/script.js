@@ -50,47 +50,27 @@ function drawLine(x0, y0, x1, y1, color) {
     ctx.stroke();
 }
 
-// Prevent unwanted browser gestures
-function preventBrowserGestures(e) {
-    if (e.touches.length >= 2) {
-        e.preventDefault();
-    }
-}
-
 // Touch handlers for canvas
 function handleTouchStart(e) {
     if (!canDraw) return;
-
-    // Always prevent default for touch events on canvas
-    e.preventDefault();
     
     if (e.touches.length === 1) {
         isDrawing = true;
         const pos = getPosition(e);
         lastX = pos.x;
         lastY = pos.y;
+        e.preventDefault(); // Only prevent default for single-finger drawing
     } else {
-        // Immediately stop drawing if second finger is added
+        // For two or more fingers, let the default behavior happen
         isDrawing = false;
         socket.emit('draw', { type: 'end' });
     }
 }
 
 function handleTouchMove(e) {
-    // Always prevent default for touch events on canvas
-    e.preventDefault();
-
-    // Immediately handle multi-touch
-    if (e.touches.length > 1) {
-        if (isDrawing) {
-            isDrawing = false;
-            socket.emit('draw', { type: 'end' });
-        }
-        return;
-    }
-    
-    // Single finger drawing
+    // If we're actively drawing with one finger
     if (isDrawing && e.touches.length === 1) {
+        e.preventDefault(); // Only prevent default while actually drawing
         const pos = getPosition(e);
         drawLine(lastX, lastY, pos.x, pos.y, currentColor);
         
@@ -105,13 +85,16 @@ function handleTouchMove(e) {
         
         lastX = pos.x;
         lastY = pos.y;
+    } else if (e.touches.length > 1) {
+        // For two or more fingers, immediately stop drawing
+        if (isDrawing) {
+            isDrawing = false;
+            socket.emit('draw', { type: 'end' });
+        }
     }
 }
 
 function handleTouchEnd(e) {
-    // Always prevent default for touch events on canvas
-    e.preventDefault();
-
     if (isDrawing) {
         isDrawing = false;
         socket.emit('draw', { type: 'end' });
@@ -201,16 +184,10 @@ canvas.addEventListener('mousemove', draw);
 canvas.addEventListener('mouseup', stopDrawing);
 canvas.addEventListener('mouseout', stopDrawing);
 
-// Touch event listeners with passive: false to ensure preventDefault works
 canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
 canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
-canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
-canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
-
-// Prevent unwanted browser gestures on the canvas
-canvas.addEventListener('gesturestart', preventBrowserGestures, { passive: false });
-canvas.addEventListener('gesturechange', preventBrowserGestures, { passive: false });
-canvas.addEventListener('gestureend', preventBrowserGestures, { passive: false });
+canvas.addEventListener('touchend', handleTouchEnd);
+canvas.addEventListener('touchcancel', handleTouchEnd);
 
 // Simplified color selection
 document.querySelectorAll('.color-dot').forEach(dot => {
