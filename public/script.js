@@ -78,10 +78,11 @@ function drawLine(x0, y0, x1, y1, color) {
     ctx.stroke();
 }
 
+// Handle touch interactions
 function handleTouchStart(e) {
     if (!canDraw) return;
-    
     const now = Date.now();
+
     // Only handle single-finger touches for drawing
     if (e.touches.length === 1) {
         // If the last touch ended very recently, don't start drawing yet
@@ -97,7 +98,7 @@ function handleTouchStart(e) {
 
 function handleTouchMove(e) {
     if (!canDraw) return;
-    
+
     // Only handle drawing for single-finger touches
     if (isDrawing && e.touches.length === 1) {
         draw(e);
@@ -114,9 +115,10 @@ function handleTouchEnd(e) {
     }
 }
 
+// Handle mouse interactions
 function startDrawing(e) {
     if (!canDraw) return;
-    
+
     if (e.type.includes('mouse')) {
         isDrawing = true;
         const pos = getPosition(e);
@@ -137,13 +139,15 @@ function draw(e) {
     drawLine(lastX, lastY, pos.x, pos.y, currentColor);
 
     // Emit line data
-    socket.emit('draw', {
-        type: 'draw',
-        x0: lastX,
-        y0: lastY,
-        x1: pos.x,
-        y1: pos.y,
-        color: currentColor
+    throttle(() => {
+        socket.emit('draw', {
+            type: 'draw',
+            x0: lastX,
+            y0: lastY,
+            x1: pos.x,
+            y1: pos.y,
+            color: currentColor
+        });
     });
 
     lastX = pos.x;
@@ -197,3 +201,12 @@ document.querySelectorAll('.color-dot').forEach(dot => {
         currentColor = e.target.style.backgroundColor;
     });
 });
+
+// Throttling function for better performance
+function throttle(callback) {
+    const now = Date.now();
+    if (!lastTouchTime || now - lastTouchTime >= 16) {
+        callback();
+        lastTouchTime = now;
+    }
+}
