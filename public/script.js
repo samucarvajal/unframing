@@ -10,7 +10,7 @@ let lastX = 0;
 let lastY = 0;
 let lastTouchTime = 0;
 let canDraw = true;
-let syncComplete = true; // Initialize to true to allow drawing immediately if no delay is needed
+let syncComplete = true; // Simplified to default as true
 
 // Fill canvas with initial background color
 ctx.fillStyle = '#efefef';
@@ -46,7 +46,7 @@ socket.on('current-state', (history) => {
             drawLine(data.x0, data.y0, data.x1, data.y1, data.color);
         }
     });
-    syncComplete = true; // Ensure drawing is unlocked after synchronization
+    syncComplete = true; // Allow drawing immediately after sync
     console.log('Synchronization complete. Drawing is now enabled.');
 });
 
@@ -102,10 +102,7 @@ function handleTouchEnd(e) {
 }
 
 function startDrawing(e) {
-    if (!canDraw || !syncComplete) {
-        console.log('Cannot start drawing. SyncComplete:', syncComplete, 'CanDraw:', canDraw);
-        return; 
-    }
+    if (!canDraw || !syncComplete) return;
     if (e.type.includes('mouse')) {
         isDrawing = true;
         const pos = getPosition(e);
@@ -144,12 +141,11 @@ socket.on('force-clear-canvas', () => {
     console.log('Canvas force cleared by server.');
     isDrawing = false;
     canDraw = false;
-    syncComplete = false; // Lock drawing until resync
+    syncComplete = true; // Simplify logic for uninterrupted drawing
     ctx.fillStyle = '#efefef';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     setTimeout(() => {
         canDraw = true;
-        syncComplete = true; // Unlock drawing after reset
         console.log('Canvas reset complete. Drawing enabled.');
     }, 100);
 });
