@@ -10,6 +10,7 @@ let lastX = 0;
 let lastY = 0;
 let lastTouchTime = 0;
 let canDraw = true;
+let syncComplete = false; // Prevent drawing until sync is complete
 
 // Fill canvas with initial background color
 ctx.fillStyle = '#efefef';
@@ -38,6 +39,7 @@ socket.on('drawing-history', (history) => {
 });
 
 socket.on('current-state', (history) => {
+    syncComplete = true; // Unlock drawing
     ctx.fillStyle = '#efefef';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     history.forEach(data => {
@@ -67,7 +69,7 @@ function drawLine(x0, y0, x1, y1, color) {
 }
 
 function handleTouchStart(e) {
-    if (!canDraw) return;
+    if (!canDraw || !syncComplete) return; // Block drawing if not synced
     const now = Date.now();
     if (e.touches.length === 1) {
         if (now - lastTouchTime > 100) {
@@ -81,7 +83,7 @@ function handleTouchStart(e) {
 }
 
 function handleTouchMove(e) {
-    if (!canDraw) return;
+    if (!canDraw || !syncComplete) return; // Block drawing if not synced
     if (isDrawing && e.touches.length === 1) {
         draw(e);
         e.preventDefault();
@@ -96,7 +98,7 @@ function handleTouchEnd(e) {
 }
 
 function startDrawing(e) {
-    if (!canDraw) return;
+    if (!canDraw || !syncComplete) return; // Block drawing if not synced
     if (e.type.includes('mouse')) {
         isDrawing = true;
         const pos = getPosition(e);
@@ -110,7 +112,7 @@ function stopDrawing() {
 }
 
 function draw(e) {
-    if (!isDrawing || !canDraw) return;
+    if (!isDrawing || !canDraw || !syncComplete) return; // Block drawing if not synced
     const pos = getPosition(e);
     drawLine(lastX, lastY, pos.x, pos.y, currentColor);
     socket.emit('draw', {
@@ -135,10 +137,12 @@ socket.on('force-clear-canvas', () => {
     console.log('Canvas force cleared by server.');
     isDrawing = false;
     canDraw = false;
+    syncComplete = false; // Reset sync status
     ctx.fillStyle = '#efefef';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     setTimeout(() => {
         canDraw = true;
+        syncComplete = true; // Allow drawing again after reset
     }, 100);
 });
 
