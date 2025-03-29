@@ -65,32 +65,55 @@ if (!fs.existsSync(snapshotDir)) {
 const drawingHistory = new DrawingHistory();
 initializeSocket(io, drawingHistory);
 
-// Track snapshot interval for proper cleanup
-let snapshotInterval = null;
+// Track snapshot timeout for proper cleanup
+let snapshotTimeout = null;
 
-// Schedule snapshots every hour (3600000ms) with error handling
-const startSnapshotInterval = () => {
-    if (snapshotInterval) {
-        clearInterval(snapshotInterval);
+// Helper function to get Sydney time
+function getSydneyTime() {
+    // Sydney is GMT+11
+    return new Date(new Date().toLocaleString("en-US", {timeZone: "Australia/Sydney"}));
+}
+
+// Helper function to get milliseconds until next hour in Sydney time
+function getMillisecondsUntilNextHour() {
+    const sydneyTime = getSydneyTime();
+    
+    // Calculate time until the start of the next hour
+    const millisUntilNextHour = (60 - sydneyTime.getMinutes()) * 60 * 1000 - 
+                                sydneyTime.getSeconds() * 1000 - 
+                                sydneyTime.getMilliseconds();
+    
+    return millisUntilNextHour;
+}
+
+// Schedule a snapshot at the next hour boundary in Sydney time
+const scheduleNextHourSnapshot = () => {
+    if (snapshotTimeout) {
+        clearTimeout(snapshotTimeout);
     }
     
-    // Changed from 60 * 1000 (1 minute) to 60 * 60 * 1000 (1 hour)
-    const ONE_HOUR = 60 * 60 * 1000;
+    const millisUntilNextHour = getMillisecondsUntilNextHour();
+    const sydneyTime = getSydneyTime();
+    const nextHour = (sydneyTime.getHours() + 1) % 24;
     
-    snapshotInterval = setInterval(async () => {
+    console.log(`Scheduling next snapshot for ${nextHour}:00 Sydney time (in ${Math.round(millisUntilNextHour/1000/60)} minutes)`);
+    
+    snapshotTimeout = setTimeout(async () => {
         try {
-            console.log('Taking hourly snapshot...');
+            const currentSydneyTime = getSydneyTime();
+            console.log(`Taking scheduled snapshot at ${currentSydneyTime.getHours()}:${currentSydneyTime.getMinutes()} Sydney time`);
             await takeSnapshot(drawingHistory, snapshotDir, io);
         } catch (error) {
-            console.error('Error in snapshot interval:', error);
-            // Keep the interval running even if a snapshot fails
+            console.error('Error in scheduled snapshot:', error);
         }
-    }, ONE_HOUR);
-    
-    console.log('Snapshot interval set to 1 hour');
+        
+        // Schedule the next snapshot
+        scheduleNextHourSnapshot();
+    }, millisUntilNextHour);
 };
 
-startSnapshotInterval();
+// Start the hourly snapshot scheduling
+scheduleNextHourSnapshot();
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -101,15 +124,19 @@ app.get('/health', (req, res) => {
 const PORT = process.env.PORT || 3000;
 const server = http.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on port ${PORT}`);
+    
+    // Log current Sydney time for reference
+    const sydneyTime = getSydneyTime();
+    console.log(`Current Sydney time: ${sydneyTime.toLocaleString()}`);
 });
 
 // Graceful shutdown handling
 const gracefulShutdown = async () => {
     console.log('Shutting down gracefully...');
     
-    // Clear the snapshot interval
-    if (snapshotInterval) {
-        clearInterval(snapshotInterval);
+    // Clear the snapshot timeout
+    if (snapshotTimeout) {
+        clearTimeout(snapshotTimeout);
     }
     
     // Take a final snapshot if there are drawings
