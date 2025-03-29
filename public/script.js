@@ -11,6 +11,7 @@ let lastY = 0;
 let lastTouchTime = 0;
 let canDraw = true;
 let syncComplete = true; // Simplified to default as true
+let lastDrawnPoint = { x: null, y: null };
 
 // Fill canvas with initial background color
 ctx.fillStyle = '#efefef';
@@ -59,6 +60,24 @@ function getPosition(e) {
     return { x, y };
 }
 
+// Function to check if a point is within the viewport bounds
+function isWithinViewport(clientX, clientY) {
+    // Get the viewport dimensions
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // Add a small threshold (5px) for better edge detection
+    const threshold = 5;
+    
+    // Check if the point is within bounds (with threshold)
+    return (
+        clientX >= threshold && 
+        clientX <= viewportWidth - threshold && 
+        clientY >= threshold && 
+        clientY <= viewportHeight - threshold
+    );
+}
+
 function drawLine(x0, y0, x1, y1, color) {
     ctx.beginPath();
     ctx.moveTo(x0, y0);
@@ -81,6 +100,7 @@ function handleTouchStart(e) {
             const pos = getPosition(e);
             lastX = pos.x;
             lastY = pos.y;
+            lastDrawnPoint = { x: e.touches[0].clientX, y: e.touches[0].clientY };
             e.preventDefault();
         }
     }
@@ -89,7 +109,23 @@ function handleTouchStart(e) {
 function handleTouchMove(e) {
     if (!canDraw || !syncComplete) return;
     if (isDrawing && e.touches.length === 1) {
+        // Check if the touch is at the viewport edge
+        if (!isWithinViewport(e.touches[0].clientX, e.touches[0].clientY)) {
+            // Stop drawing if we're at the edge
+            isDrawing = false;
+            return;
+        }
+        
+        // If the distance is too large between points, it might be a jump across screen edges
+        const dx = Math.abs(e.touches[0].clientX - lastDrawnPoint.x);
+        const dy = Math.abs(e.touches[0].clientY - lastDrawnPoint.y);
+        if (dx > 100 || dy > 100) {
+            isDrawing = false;
+            return;
+        }
+        
         draw(e);
+        lastDrawnPoint = { x: e.touches[0].clientX, y: e.touches[0].clientY };
         e.preventDefault();
     }
 }
@@ -98,6 +134,7 @@ function handleTouchEnd(e) {
     if (isDrawing) {
         isDrawing = false;
         lastTouchTime = Date.now();
+        lastDrawnPoint = { x: null, y: null };
     }
 }
 
@@ -108,15 +145,39 @@ function startDrawing(e) {
         const pos = getPosition(e);
         lastX = pos.x;
         lastY = pos.y;
+        lastDrawnPoint = { x: e.clientX, y: e.clientY };
     }
 }
 
 function stopDrawing() {
     isDrawing = false;
+    lastDrawnPoint = { x: null, y: null };
 }
 
 function draw(e) {
     if (!isDrawing || !canDraw || !syncComplete) return;
+    
+    // For mouse events, check if we're at the viewport edge
+    if (!e.type.includes('touch')) {
+        if (!isWithinViewport(e.clientX, e.clientY)) {
+            // Stop drawing if we're at the edge
+            isDrawing = false;
+            return;
+        }
+        
+        // If the distance is too large between points, it might be a jump across screen edges
+        if (lastDrawnPoint.x !== null) {
+            const dx = Math.abs(e.clientX - lastDrawnPoint.x);
+            const dy = Math.abs(e.clientY - lastDrawnPoint.y);
+            if (dx > 100 || dy > 100) {
+                isDrawing = false;
+                return;
+            }
+        }
+        
+        lastDrawnPoint = { x: e.clientX, y: e.clientY };
+    }
+    
     const pos = getPosition(e);
     drawLine(lastX, lastY, pos.x, pos.y, currentColor);
     socket.emit('draw', {
