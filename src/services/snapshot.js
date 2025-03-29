@@ -68,7 +68,8 @@ const takeSnapshot = async (drawingHistory, snapshotDir, io) => {
             fs.mkdirSync(snapshotDir, { recursive: true });
         }
 
-        const canvas = createCanvas(1440, 760);
+        // Updated canvas size to 2880x1800
+        const canvas = createCanvas(2880, 1800);
         const ctx = canvas.getContext('2d');
 
         // Draw the canvas

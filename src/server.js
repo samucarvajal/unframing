@@ -68,20 +68,26 @@ initializeSocket(io, drawingHistory);
 // Track snapshot interval for proper cleanup
 let snapshotInterval = null;
 
-// Schedule snapshots every minute with error handling
+// Schedule snapshots every hour (3600000ms) with error handling
 const startSnapshotInterval = () => {
     if (snapshotInterval) {
         clearInterval(snapshotInterval);
     }
     
+    // Changed from 60 * 1000 (1 minute) to 60 * 60 * 1000 (1 hour)
+    const ONE_HOUR = 60 * 60 * 1000;
+    
     snapshotInterval = setInterval(async () => {
         try {
+            console.log('Taking hourly snapshot...');
             await takeSnapshot(drawingHistory, snapshotDir, io);
         } catch (error) {
             console.error('Error in snapshot interval:', error);
             // Keep the interval running even if a snapshot fails
         }
-    }, 60 * 1000);
+    }, ONE_HOUR);
+    
+    console.log('Snapshot interval set to 1 hour');
 };
 
 startSnapshotInterval();

@@ -7,8 +7,8 @@ body, html {
 }
 
 .canvas-container {
-    width: 1440px;
-    height: 760px;
+    width: 2880px;
+    height: 1800px;
     position: relative;
     overflow: auto;
     -webkit-overflow-scrolling: touch;
@@ -17,8 +17,8 @@ body, html {
 canvas {
     display: block;
     background: #efefef;
-    width: 1440px;
-    height: 760px;
+    width: 2880px;
+    height: 1800px;
 }
 
 #colors {
