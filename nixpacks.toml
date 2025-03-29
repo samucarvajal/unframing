@@ -3,13 +3,14 @@ nixPkgs = [
     "cairo",
     "pkg-config",
     "python3",
-    "nodejs"
+    "nodejs",
+    "pixman"  # Added pixman package
 ]
 
 [phases.build]
 cmds = [
     "sudo apt-get update",
-    "sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev"
+    "sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev libpixman-1-dev"  # Added libpixman-1-dev
 ]
 
 [phases.install]
