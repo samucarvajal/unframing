@@ -46,12 +46,6 @@ app.use((req, res, next) => {
     next();
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-    console.error('Express error:', err);
-    res.status(500).send('Something went wrong');
-});
-
 // Serve static files from the 'public' directory
 app.use(express.static('public'));
 
@@ -70,7 +64,7 @@ let snapshotTimeout = null;
 
 // Helper function to get Sydney time
 function getSydneyTime() {
-    // Sydney is GMT+11
+    // Uses the IANA time zone, so daylight saving is handled automatically
     return new Date(new Date().toLocaleString("en-US", {timeZone: "Australia/Sydney"}));
 }
 
@@ -120,9 +114,15 @@ app.get('/health', (req, res) => {
     res.status(200).send('OK');
 });
 
+// Error handling middleware (must be registered after all routes)
+app.use((err, req, res, next) => {
+    console.error('Express error:', err);
+    res.status(500).send('Something went wrong');
+});
+
 // Start the HTTP server
 const PORT = process.env.PORT || 3000;
-const server = http.listen(PORT, '0.0.0.0', () => {
+http.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on port ${PORT}`);
     
     // Log current Sydney time for reference
@@ -149,24 +149,15 @@ const gracefulShutdown = async () => {
         }
     }
     
-    // Close the Socket.IO server
+    // Close the Socket.IO server (this also closes the attached HTTP server)
     io.close((err) => {
         if (err) {
-            console.error('Error closing Socket.IO:', err);
+            console.error('Error closing Socket.IO and HTTP server:', err);
+            process.exit(1);
         } else {
-            console.log('Socket.IO server closed');
+            console.log('Socket.IO and HTTP server closed');
+            process.exit(0);
         }
-        
-        // Close the HTTP server
-        server.close((err) => {
-            if (err) {
-                console.error('Error closing HTTP server:', err);
-                process.exit(1);
-            } else {
-                console.log('HTTP server closed');
-                process.exit(0);
-            }
-        });
     });
     
     // Force shutdown after 10 seconds if graceful shutdown fails
