@@ -6,6 +6,10 @@ const EDGE_THRESHOLD = 5;
 // A single finger must move this far (CSS px) before it counts as a stroke.
 // Gives a second finger a moment to land without leaving a stray dot.
 const STROKE_START_DISTANCE = 4;
+// Cap stroke sampling at 250/s. A 1000 Hz gaming mouse reports more, but a
+// line sampled 250 times a second is visually identical, and it keeps a
+// human hand comfortably under the server's anti-bot limit.
+const MIN_SAMPLE_INTERVAL_MS = 4;
 // Two-finger pan momentum: per-frame velocity decay and the speed below
 // which we stop coasting (px per ms)
 const PAN_FRICTION = 0.94;
@@ -216,6 +220,7 @@ function beginStroke(e) {
         lastX: pos.x,
         lastY: pos.y,
         drewAnything: false,
+        lastSampleTime: 0,
     };
 }
 
@@ -236,6 +241,7 @@ function emitSegment(x0, y0, x1, y1) {
         // Our own strokes aren't echoed back, so the ack is how we keep our
         // place in the sequence (seq 0 means the server didn't store it)
         if (ack && ack.seq > 0) noteSequence(ack);
+        else if (ack && ack.seq === 0) requestSync(0); // refused: make our canvas match everyone else's
     });
 }
 
@@ -441,7 +447,13 @@ canvas.addEventListener('pointermove', (e) => {
     // the coalesced ones keeps energetic lines smooth instead of chorded.
     const samples = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
     if (samples.length > 0) {
-        for (const s of samples) extendStroke(s.clientX, s.clientY);
+        for (let i = 0; i < samples.length; i++) {
+            const s = samples[i];
+            // Thin dense samples, but always keep the last so the line reaches the pointer
+            if (i < samples.length - 1 && stroke && s.timeStamp - stroke.lastSampleTime < MIN_SAMPLE_INTERVAL_MS) continue;
+            if (stroke) stroke.lastSampleTime = s.timeStamp;
+            extendStroke(s.clientX, s.clientY);
+        }
     } else {
         extendStroke(e.clientX, e.clientY);
     }

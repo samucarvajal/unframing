@@ -8,6 +8,42 @@ const COLOUR_PATTERN = /^(#[0-9a-f]{3}|#[0-9a-f]{6}|rgba?\(\s*\d{1,3}\s*,\s*\d{1
 // rather than dropped, so what the drawer sees is what everyone else sees.
 const MARGIN = 50;
 
+// --- Abuse limits ---------------------------------------------------------
+// A human hand produces at most ~120 segments/s on a phone or an ordinary
+// mouse, and the client caps its own sampling at 250/s even with a 1000 Hz
+// gaming mouse. These limits sit well above that, so only a script can hit
+// them. Over-limit segments are dropped; a client that keeps flooding is
+// disconnected.
+const SEGMENTS_PER_SECOND = 400;     // sustained
+const SEGMENT_BURST = 800;           // short bursts allowed above the sustained rate
+const DROPS_BEFORE_DISCONNECT = 5000;
+const MAX_CONNECTIONS_PER_IP = 50;   // a lecture theatre behind one NAT still fits
+
+const connectionsPerIp = new Map();
+
+function clientIp(socket) {
+    // Railway sits behind a proxy; the real address is the first forwarded hop
+    const forwarded = socket.handshake.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.length > 0) {
+        return forwarded.split(',')[0].trim();
+    }
+    return socket.handshake.address;
+}
+
+/** Token bucket: refills at SEGMENTS_PER_SECOND, holds at most SEGMENT_BURST. */
+function makeRateLimiter() {
+    let tokens = SEGMENT_BURST;
+    let last = Date.now();
+    return () => {
+        const now = Date.now();
+        tokens = Math.min(SEGMENT_BURST, tokens + ((now - last) / 1000) * SEGMENTS_PER_SECOND);
+        last = now;
+        if (tokens < 1) return false;
+        tokens -= 1;
+        return true;
+    };
+}
+
 // Don't flood the logs if a client misbehaves
 let rejectionsLogged = 0;
 const MAX_REJECTIONS_LOGGED = 50;
@@ -60,7 +96,18 @@ const initializeSocket = (io, drawingHistory) => {
     });
 
     io.on('connection', (socket) => {
+        const ip = clientIp(socket);
+        const ipCount = (connectionsPerIp.get(ip) || 0) + 1;
+        if (ipCount > MAX_CONNECTIONS_PER_IP) {
+            console.warn(`Too many connections from ${ip}; refusing ${socket.id}`);
+            socket.disconnect(true);
+            return;
+        }
+        connectionsPerIp.set(ip, ipCount);
         console.log('A user connected:', socket.id);
+
+        const allowSegment = makeRateLimiter();
+        let dropped = 0;
 
         const sendState = (event, afterSeq = 0) => {
             try {
@@ -100,8 +147,20 @@ const initializeSocket = (io, drawingHistory) => {
          * stream without being sent its own strokes back.
          */
         socket.on('draw', (data, ack) => {
-            const { segment, error } = sanitiseSegment(data);
             const reply = typeof ack === 'function' ? ack : () => {};
+
+            if (!allowSegment()) {
+                // Only a script can draw this fast; drop it, and cut it off if it persists
+                reply({ epoch: drawingHistory.epoch, seq: 0 });
+                if (++dropped === 1) console.warn(`Rate limit hit by ${socket.id} (${ip})`);
+                if (dropped >= DROPS_BEFORE_DISCONNECT) {
+                    console.warn(`Disconnecting ${socket.id} (${ip}) after ${dropped} dropped segments`);
+                    socket.disconnect(true);
+                }
+                return;
+            }
+
+            const { segment, error } = sanitiseSegment(data);
 
             if (!segment) {
                 logRejection(socket.id, error, data);
@@ -125,6 +184,9 @@ const initializeSocket = (io, drawingHistory) => {
         });
 
         socket.on('disconnect', (reason) => {
+            const remaining = (connectionsPerIp.get(ip) || 1) - 1;
+            if (remaining <= 0) connectionsPerIp.delete(ip);
+            else connectionsPerIp.set(ip, remaining);
             console.log(`User disconnected (${reason}):`, socket.id);
         });
     });

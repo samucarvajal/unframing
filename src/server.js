@@ -26,16 +26,17 @@ const app = express();
 const http = require('http').createServer(app);
 
 const io = new Server(http, {
-    cors: {
-        origin: '*',
-        methods: ['GET', 'POST'],
-    },
+    // No CORS config: the page is served from this same origin, so only it
+    // can connect. Another website can't embed a client that draws here.
     transports: ['websocket', 'polling'],
     pingTimeout: 60_000,
     pingInterval: 25_000,
     connectTimeout: 45_000,
-    maxHttpBufferSize: 1e6, // 1 MB max payload
+    maxHttpBufferSize: 4096, // a segment is ~100 bytes; nothing legitimate is bigger than this
 });
+
+// Railway terminates TLS at its proxy; trust it for client addresses
+app.set('trust proxy', 1);
 
 // Always serve fresh HTML/JS so clients pick up deploys immediately
 app.use((req, res, next) => {
