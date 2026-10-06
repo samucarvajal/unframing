@@ -204,11 +204,34 @@ function beginStroke(e) {
         started: e.pointerType !== 'touch', // touch waits for movement, see STROKE_START_DISTANCE
         lastX: pos.x,
         lastY: pos.y,
+        drewAnything: false,
     };
 }
 
 function endStroke() {
     stroke = null;
+}
+
+/** Send one segment, drawing it locally first. */
+function emitSegment(x0, y0, x1, y1) {
+    drawLine(x0, y0, x1, y1, currentColor);
+    socket.emit('draw', { type: 'draw', x0, y0, x1, y1, color: currentColor }, (ack) => {
+        // Our own strokes aren't echoed back, so the ack is how we keep our
+        // place in the sequence (seq 0 means the server didn't store it)
+        if (ack && ack.seq > 0) noteSequence(ack);
+    });
+}
+
+/**
+ * The pointer was released. If it never moved, this was a tap or click:
+ * make a dot. A zero-length segment with round caps renders as a dot
+ * everywhere, including in the snapshot.
+ */
+function releaseStroke() {
+    if (stroke && !stroke.drewAnything && canDraw) {
+        emitSegment(stroke.lastX, stroke.lastY, stroke.lastX, stroke.lastY);
+    }
+    endStroke();
 }
 
 function extendStroke(clientX, clientY) {
@@ -226,19 +249,8 @@ function extendStroke(clientX, clientY) {
     }
 
     const pos = toCanvasPosition(clientX, clientY);
-    drawLine(stroke.lastX, stroke.lastY, pos.x, pos.y, currentColor);
-    socket.emit('draw', {
-        type: 'draw',
-        x0: stroke.lastX,
-        y0: stroke.lastY,
-        x1: pos.x,
-        y1: pos.y,
-        color: currentColor,
-    }, (ack) => {
-        // Our own strokes aren't echoed back, so the ack is how we keep our
-        // place in the sequence (seq 0 means the server didn't store it)
-        if (ack && ack.seq > 0) noteSequence(ack);
-    });
+    emitSegment(stroke.lastX, stroke.lastY, pos.x, pos.y);
+    stroke.drewAnything = true;
     stroke.lastX = pos.x;
     stroke.lastY = pos.y;
 }
@@ -419,7 +431,12 @@ canvas.addEventListener('pointermove', (e) => {
 });
 
 function handlePointerUp(e) {
-    if (stroke && e.pointerId === stroke.pointerId) endStroke();
+    if (!stroke || e.pointerId !== stroke.pointerId) return;
+    if (e.type === 'pointerup') {
+        releaseStroke();
+    } else {
+        endStroke(); // cancelled: no dot
+    }
 }
 
 canvas.addEventListener('pointerup', handlePointerUp);
