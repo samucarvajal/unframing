@@ -176,6 +176,37 @@ function extendStroke(clientX, clientY) {
     stroke.lastY = pos.y;
 }
 
+// --- Viewport -------------------------------------------------------------
+// The page itself never scrolls. We move the canvas with a CSS transform
+// instead, which sidesteps an iOS WebKit quirk where touch coordinates shift
+// while the page is being scrolled underneath stationary fingers (that fed
+// back into the pan and sent it flying to the far edge).
+
+const container = document.querySelector('.canvas-container');
+const view = { x: 0, y: 0 }; // translation applied to the container, in CSS px
+
+function setView(x, y) {
+    // Keep the canvas covering the viewport; allow nothing past its edges
+    const minX = Math.min(0, window.innerWidth - canvas.width);
+    const minY = Math.min(0, window.innerHeight - canvas.height);
+    view.x = Math.min(0, Math.max(minX, x));
+    view.y = Math.min(0, Math.max(minY, y));
+    container.style.transform = `translate3d(${view.x}px, ${view.y}px, 0)`;
+}
+
+function panBy(dx, dy) {
+    setView(view.x + dx, view.y + dy);
+}
+
+setView(0, 0);
+window.addEventListener('resize', () => setView(view.x, view.y));
+
+// Desktop: mouse wheel / trackpad pans
+canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    panBy(-e.deltaX, -e.deltaY);
+}, { passive: false });
+
 // --- Panning (two fingers) ------------------------------------------------
 
 let pan = null;          // { x, y, vx, vy, time } centroid of the fingers
@@ -214,7 +245,7 @@ function movePan(touches) {
     const dx = c.x - pan.x;
     const dy = c.y - pan.y;
 
-    window.scrollBy(-dx, -dy);
+    panBy(dx, dy);
 
     // Smooth the velocity a little so momentum isn't jittery
     pan.vx = pan.vx * 0.3 + (dx / dt) * 0.7;
@@ -234,7 +265,7 @@ function endPan() {
     const step = (now) => {
         const dt = now - last;
         last = now;
-        window.scrollBy(-vx * dt, -vy * dt);
+        panBy(vx * dt, vy * dt);
         vx *= PAN_FRICTION;
         vy *= PAN_FRICTION;
         if (Math.hypot(vx, vy) > PAN_MIN_VELOCITY) {

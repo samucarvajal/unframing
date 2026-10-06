@@ -106,6 +106,13 @@ scheduleNextHourSnapshot();
 
 // --- Startup / shutdown ---------------------------------------------------
 
+// A failure to bind is fatal; don't let the global handler swallow it and
+// leave a process running that serves nothing
+http.on('error', (error) => {
+    console.error(`Failed to start server on port ${PORT}:`, error.message);
+    process.exit(1);
+});
+
 http.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on port ${PORT}`);
     console.log(`Current Sydney time: ${formatSydneyTime()}`);
