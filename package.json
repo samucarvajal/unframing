@@ -8,14 +8,14 @@
     "dev": "node --watch src/server.js"
   },
   "dependencies": {
-    "canvas": "^2.11.2",
+    "canvas": "^3.2.3",
     "cloudinary": "^2.5.1",
     "dotenv": "^16.4.7",
     "express": "^4.18.2",
     "socket.io": "^4.5.4"
   },
   "engines": {
-    "node": ">=14.x <=18.x"
+    "node": ">=22"
   },
   "author": "Samu Carvajal",
   "license": "MIT",
