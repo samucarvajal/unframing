@@ -4,7 +4,8 @@
   "description": "A collaborative real-time drawing canvas",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
   },
   "dependencies": {
     "canvas": "^2.11.2",
@@ -16,6 +17,7 @@
   "engines": {
     "node": ">=14.x <=18.x"
   },
-  "author": "Your Name",
-  "license": "MIT"
+  "author": "Samu Carvajal",
+  "license": "MIT",
+  "private": true
 }

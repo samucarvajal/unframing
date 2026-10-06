@@ -1,196 +1,62 @@
-// Connect to the server
-const socket = io();
+const BACKGROUND_COLOUR = '#efefef';
+const LINE_WIDTH = 3;
+const DEFAULT_COLOUR = '#1d1d1d';
 
-// Initialize canvas
+// Treat a pointer that leaves this many px from the viewport edge as "off canvas"
+const EDGE_THRESHOLD = 5;
+// A jump larger than this between two move events is almost certainly a
+// wrap-around (e.g. pointer leaving and re-entering), not a stroke
+const MAX_JUMP = 100;
+// Ignore touch starts within this window after the previous touch ended
+const TOUCH_DEBOUNCE_MS = 100;
+
+const socket = io();
 const canvas = document.getElementById('drawingCanvas');
 const ctx = canvas.getContext('2d');
+
 let isDrawing = false;
-let currentColor = '#1d1d1d';
+let canDraw = true;
+let currentColor = DEFAULT_COLOUR;
 let lastX = 0;
 let lastY = 0;
 let lastTouchTime = 0;
-let canDraw = true;
-let syncComplete = true; // Simplified to default as true
 let lastDrawnPoint = { x: null, y: null };
 
-// Fill canvas with initial background color
-ctx.fillStyle = '#efefef';
-ctx.fillRect(0, 0, canvas.width, canvas.height);
+// Stroke style never changes, so set it once
+ctx.lineWidth = LINE_WIDTH;
+ctx.lineCap = 'round';
 
-// Handle window focus
-window.addEventListener('focus', () => {
-    console.log('Page regained focus. Clearing canvas and requesting current state.');
-    ctx.fillStyle = '#efefef';
+function clearCanvas() {
+    ctx.fillStyle = BACKGROUND_COLOUR;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    socket.emit('request-state');
-});
-
-document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) {
-        socket.emit('request-state');
-    }
-});
-
-socket.on('drawing-history', (history) => {
-    history.forEach(data => {
-        if (data.type === 'draw') {
-            drawLine(data.x0, data.y0, data.x1, data.y1, data.color);
-        }
-    });
-});
-
-socket.on('current-state', (history) => {
-    ctx.fillStyle = '#efefef';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    history.forEach(data => {
-        if (data.type === 'draw') {
-            drawLine(data.x0, data.y0, data.x1, data.y1, data.color);
-        }
-    });
-    syncComplete = true; // Allow drawing immediately after sync
-    console.log('Synchronization complete. Drawing is now enabled.');
-});
-
-function getPosition(e) {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const x = ((e.type.includes('touch') ? e.touches[0].clientX : e.clientX) - rect.left) * scaleX;
-    const y = ((e.type.includes('touch') ? e.touches[0].clientY : e.clientY) - rect.top) * scaleY;
-    return { x, y };
-}
-
-// Function to check if a point is within the viewport bounds
-function isWithinViewport(clientX, clientY) {
-    // Get the viewport dimensions
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    
-    // Add a small threshold (5px) for better edge detection
-    const threshold = 5;
-    
-    // Check if the point is within bounds (with threshold)
-    return (
-        clientX >= threshold && 
-        clientX <= viewportWidth - threshold && 
-        clientY >= threshold && 
-        clientY <= viewportHeight - threshold
-    );
 }
 
 function drawLine(x0, y0, x1, y1, color) {
     ctx.beginPath();
     ctx.moveTo(x0, y0);
     ctx.lineTo(x1, y1);
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
     ctx.strokeStyle = color;
     ctx.stroke();
 }
 
-function handleTouchStart(e) {
-    if (!canDraw || !syncComplete) {
-        console.log('Cannot start drawing. SyncComplete:', syncComplete, 'CanDraw:', canDraw);
-        return; 
-    }
-    const now = Date.now();
-    if (e.touches.length === 1) {
-        if (now - lastTouchTime > 100) {
-            isDrawing = true;
-            const pos = getPosition(e);
-            lastX = pos.x;
-            lastY = pos.y;
-            lastDrawnPoint = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-            e.preventDefault();
+function replayHistory(history) {
+    clearCanvas();
+    for (const data of history) {
+        if (data.type === 'draw') {
+            drawLine(data.x0, data.y0, data.x1, data.y1, data.color);
         }
     }
 }
 
-function handleTouchMove(e) {
-    if (!canDraw || !syncComplete) return;
-    if (isDrawing && e.touches.length === 1) {
-        // Check if the touch is at the viewport edge
-        if (!isWithinViewport(e.touches[0].clientX, e.touches[0].clientY)) {
-            // Stop drawing if we're at the edge
-            isDrawing = false;
-            return;
-        }
-        
-        // If the distance is too large between points, it might be a jump across screen edges
-        const dx = Math.abs(e.touches[0].clientX - lastDrawnPoint.x);
-        const dy = Math.abs(e.touches[0].clientY - lastDrawnPoint.y);
-        if (dx > 100 || dy > 100) {
-            isDrawing = false;
-            return;
-        }
-        
-        draw(e);
-        lastDrawnPoint = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        e.preventDefault();
-    }
-}
+clearCanvas();
 
-function handleTouchEnd(e) {
-    if (isDrawing) {
-        isDrawing = false;
-        lastTouchTime = Date.now();
-        lastDrawnPoint = { x: null, y: null };
-    }
-}
+// --- Server events --------------------------------------------------------
 
-function startDrawing(e) {
-    if (!canDraw || !syncComplete) return;
-    if (e.type.includes('mouse')) {
-        isDrawing = true;
-        const pos = getPosition(e);
-        lastX = pos.x;
-        lastY = pos.y;
-        lastDrawnPoint = { x: e.clientX, y: e.clientY };
-    }
-}
+// Sent on (re)connect with everything drawn so far
+socket.on('drawing-history', replayHistory);
 
-function stopDrawing() {
-    isDrawing = false;
-    lastDrawnPoint = { x: null, y: null };
-}
-
-function draw(e) {
-    if (!isDrawing || !canDraw || !syncComplete) return;
-    
-    // For mouse events, check if we're at the viewport edge
-    if (!e.type.includes('touch')) {
-        if (!isWithinViewport(e.clientX, e.clientY)) {
-            // Stop drawing if we're at the edge
-            isDrawing = false;
-            return;
-        }
-        
-        // If the distance is too large between points, it might be a jump across screen edges
-        if (lastDrawnPoint.x !== null) {
-            const dx = Math.abs(e.clientX - lastDrawnPoint.x);
-            const dy = Math.abs(e.clientY - lastDrawnPoint.y);
-            if (dx > 100 || dy > 100) {
-                isDrawing = false;
-                return;
-            }
-        }
-        
-        lastDrawnPoint = { x: e.clientX, y: e.clientY };
-    }
-    
-    const pos = getPosition(e);
-    drawLine(lastX, lastY, pos.x, pos.y, currentColor);
-    socket.emit('draw', {
-        type: 'draw',
-        x0: lastX,
-        y0: lastY,
-        x1: pos.x,
-        y1: pos.y,
-        color: currentColor
-    });
-    lastX = pos.x;
-    lastY = pos.y;
-}
+// Sent in reply to 'request-state'
+socket.on('current-state', replayHistory);
 
 socket.on('draw', (data) => {
     if (data.type === 'draw') {
@@ -199,30 +65,142 @@ socket.on('draw', (data) => {
 });
 
 socket.on('force-clear-canvas', () => {
-    console.log('Canvas force cleared by server.');
+    console.log('Canvas cleared by server.');
     isDrawing = false;
     canDraw = false;
-    syncComplete = true; // Simplify logic for uninterrupted drawing
-    ctx.fillStyle = '#efefef';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    clearCanvas();
+    // Brief pause so an in-progress stroke doesn't bleed onto the fresh canvas
     setTimeout(() => {
         canDraw = true;
-        console.log('Canvas reset complete. Drawing enabled.');
     }, 100);
 });
 
-canvas.addEventListener('mousedown', startDrawing);
-canvas.addEventListener('mousemove', draw);
-canvas.addEventListener('mouseup', stopDrawing);
-canvas.addEventListener('mouseout', stopDrawing);
+socket.on('snapshot-error', ({ message }) => {
+    console.warn('Snapshot error:', message);
+});
 
-canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
-canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+// Re-sync when the tab comes back; a backgrounded tab may have missed events
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+        socket.emit('request-state');
+    }
+});
+
+// --- Pointer helpers ------------------------------------------------------
+
+function getClientPoint(e) {
+    const source = e.touches ? e.touches[0] : e;
+    return { clientX: source.clientX, clientY: source.clientY };
+}
+
+function toCanvasPosition({ clientX, clientY }) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+        x: (clientX - rect.left) * (canvas.width / rect.width),
+        y: (clientY - rect.top) * (canvas.height / rect.height),
+    };
+}
+
+function isWithinViewport({ clientX, clientY }) {
+    return (
+        clientX >= EDGE_THRESHOLD &&
+        clientX <= window.innerWidth - EDGE_THRESHOLD &&
+        clientY >= EDGE_THRESHOLD &&
+        clientY <= window.innerHeight - EDGE_THRESHOLD
+    );
+}
+
+function isSuspiciousJump({ clientX, clientY }) {
+    if (lastDrawnPoint.x === null) return false;
+    return Math.abs(clientX - lastDrawnPoint.x) > MAX_JUMP ||
+        Math.abs(clientY - lastDrawnPoint.y) > MAX_JUMP;
+}
+
+function beginStroke(point) {
+    isDrawing = true;
+    const pos = toCanvasPosition(point);
+    lastX = pos.x;
+    lastY = pos.y;
+    lastDrawnPoint = { x: point.clientX, y: point.clientY };
+}
+
+function endStroke() {
+    isDrawing = false;
+    lastDrawnPoint = { x: null, y: null };
+}
+
+/** Extend the current stroke to `point`, drawing locally and broadcasting. */
+function continueStroke(point) {
+    if (!isDrawing || !canDraw) return;
+
+    if (!isWithinViewport(point) || isSuspiciousJump(point)) {
+        endStroke();
+        return;
+    }
+
+    const pos = toCanvasPosition(point);
+    drawLine(lastX, lastY, pos.x, pos.y, currentColor);
+    socket.emit('draw', {
+        type: 'draw',
+        x0: lastX,
+        y0: lastY,
+        x1: pos.x,
+        y1: pos.y,
+        color: currentColor,
+    });
+
+    lastX = pos.x;
+    lastY = pos.y;
+    lastDrawnPoint = { x: point.clientX, y: point.clientY };
+}
+
+// --- Mouse ----------------------------------------------------------------
+
+canvas.addEventListener('mousedown', (e) => {
+    if (!canDraw) return;
+    beginStroke(getClientPoint(e));
+});
+canvas.addEventListener('mousemove', (e) => continueStroke(getClientPoint(e)));
+canvas.addEventListener('mouseup', endStroke);
+canvas.addEventListener('mouseout', endStroke);
+
+// --- Touch ----------------------------------------------------------------
+
+canvas.addEventListener('touchstart', (e) => {
+    if (!canDraw || e.touches.length !== 1) return;
+    if (Date.now() - lastTouchTime <= TOUCH_DEBOUNCE_MS) return;
+    beginStroke(getClientPoint(e));
+    e.preventDefault();
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+    if (!isDrawing || e.touches.length !== 1) return;
+    continueStroke(getClientPoint(e));
+    e.preventDefault();
+}, { passive: false });
+
+function handleTouchEnd() {
+    if (isDrawing) {
+        lastTouchTime = Date.now();
+        endStroke();
+    }
+}
 canvas.addEventListener('touchend', handleTouchEnd);
 canvas.addEventListener('touchcancel', handleTouchEnd);
 
-document.querySelectorAll('.color-dot').forEach(dot => {
-    dot.addEventListener('click', (e) => {
-        currentColor = e.target.style.backgroundColor;
-    });
+// --- Colour palette -------------------------------------------------------
+
+const colourDots = document.querySelectorAll('.color-dot');
+
+function selectColour(dot) {
+    currentColor = dot.style.backgroundColor;
+    colourDots.forEach((d) => d.classList.toggle('active', d === dot));
+}
+
+colourDots.forEach((dot) => {
+    dot.addEventListener('click', () => selectColour(dot));
 });
+
+if (colourDots.length > 0) {
+    selectColour(colourDots[0]);
+}

@@ -1,43 +1,58 @@
-body, html {
+html, body {
     margin: 0;
     padding: 0;
+    height: 100%;
     overflow: auto;
     background: #efefef;
-    height: 100%;
 }
 
 .canvas-container {
+    position: relative;
     width: 2880px;
     height: 1800px;
-    position: relative;
     overflow: auto;
     -webkit-overflow-scrolling: touch;
 }
 
 canvas {
     display: block;
-    background: #efefef;
     width: 2880px;
     height: 1800px;
+    background: #efefef;
+    touch-action: none;
+    cursor: crosshair;
 }
 
 #colors {
     position: fixed;
     bottom: 20px;
     right: 20px;
+    z-index: 1000;
     display: flex;
     gap: 10px;
-    z-index: 1000;
     padding: 10px;
     background: rgba(255, 255, 255, 0.8);
     border-radius: 20px;
 }
 
 .color-dot {
+    box-sizing: content-box; /* keep the 16px dot plus 2px border now that it's a <button> */
     width: 16px;
     height: 16px;
-    border-radius: 50%;
-    cursor: pointer;
+    padding: 0;
     border: 2px solid #fff;
-    box-shadow: 0 0 3px rgba(0,0,0,0.15);
+    border-radius: 50%;
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+    transition: transform 0.1s ease;
+}
+
+.color-dot:hover,
+.color-dot:focus-visible {
+    transform: scale(1.15);
+    outline: none;
+}
+
+.color-dot.active {
+    box-shadow: 0 0 0 2px #1d1d1d;
 }

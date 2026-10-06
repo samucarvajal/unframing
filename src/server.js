@@ -1,41 +1,43 @@
-const express = require('express');
-const app = express();
-const http = require('http').createServer(app);
-const { Server } = require('socket.io');
+// Load environment variables before anything reads process.env
 require('dotenv').config();
-const fs = require('fs');
 
-// Import modules
-const cloudinary = require('./config/cloudinary');
+const path = require('path');
+const express = require('express');
+const { Server } = require('socket.io');
+
 const DrawingHistory = require('./services/drawingHistory');
 const initializeSocket = require('./services/socket');
 const { takeSnapshot } = require('./services/snapshot');
 
-// Global error handler
+const PORT = process.env.PORT || 3000;
+const TIME_ZONE = 'Australia/Sydney';
+const SHUTDOWN_GRACE_MS = 10_000;
+
+// Keep the process alive through non-critical errors, but make sure they're logged
 process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
-    // Continue running - we don't want to crash the server due to non-critical errors
+    console.error('Uncaught exception:', error);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-    // Continue running - we don't want to crash the server due to non-critical errors
+process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled rejection:', reason);
 });
 
-// Initialize Socket.IO with ping timeout and interval settings for better connection management
+const app = express();
+const http = require('http').createServer(app);
+
 const io = new Server(http, {
     cors: {
         origin: '*',
         methods: ['GET', 'POST'],
     },
     transports: ['websocket', 'polling'],
-    pingTimeout: 60000, // How long to wait for a ping response (60 seconds)
-    pingInterval: 25000, // How often to ping (25 seconds)
-    connectTimeout: 45000, // Connection timeout (45 seconds)
-    maxHttpBufferSize: 1e6, // 1MB max payload size
+    pingTimeout: 60_000,
+    pingInterval: 25_000,
+    connectTimeout: 45_000,
+    maxHttpBufferSize: 1e6, // 1 MB max payload
 });
 
-// Add cache control headers
+// Always serve fresh HTML/JS so clients pick up deploys immediately
 app.use((req, res, next) => {
     res.set({
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
@@ -46,127 +48,104 @@ app.use((req, res, next) => {
     next();
 });
 
-// Serve static files from the 'public' directory
-app.use(express.static('public'));
-
-// Create snapshots directory if it doesn't exist
-const snapshotDir = './snapshots';
-if (!fs.existsSync(snapshotDir)) {
-    fs.mkdirSync(snapshotDir, { recursive: true });
-}
-
-// Initialize services
-const drawingHistory = new DrawingHistory();
-initializeSocket(io, drawingHistory);
-
-// Track snapshot timeout for proper cleanup
-let snapshotTimeout = null;
-
-// Helper function to get Sydney time
-function getSydneyTime() {
-    // Uses the IANA time zone, so daylight saving is handled automatically
-    return new Date(new Date().toLocaleString("en-US", {timeZone: "Australia/Sydney"}));
-}
-
-// Helper function to get milliseconds until next hour in Sydney time
-function getMillisecondsUntilNextHour() {
-    const sydneyTime = getSydneyTime();
-    
-    // Calculate time until the start of the next hour
-    const millisUntilNextHour = (60 - sydneyTime.getMinutes()) * 60 * 1000 - 
-                                sydneyTime.getSeconds() * 1000 - 
-                                sydneyTime.getMilliseconds();
-    
-    return millisUntilNextHour;
-}
-
-// Schedule a snapshot at the next hour boundary in Sydney time
-const scheduleNextHourSnapshot = () => {
-    if (snapshotTimeout) {
-        clearTimeout(snapshotTimeout);
-    }
-    
-    const millisUntilNextHour = getMillisecondsUntilNextHour();
-    const sydneyTime = getSydneyTime();
-    const nextHour = (sydneyTime.getHours() + 1) % 24;
-    
-    console.log(`Scheduling next snapshot for ${nextHour}:00 Sydney time (in ${Math.round(millisUntilNextHour/1000/60)} minutes)`);
-    
-    snapshotTimeout = setTimeout(async () => {
-        try {
-            const currentSydneyTime = getSydneyTime();
-            console.log(`Taking scheduled snapshot at ${currentSydneyTime.getHours()}:${currentSydneyTime.getMinutes()} Sydney time`);
-            await takeSnapshot(drawingHistory, snapshotDir, io);
-        } catch (error) {
-            console.error('Error in scheduled snapshot:', error);
-        }
-        
-        // Schedule the next snapshot
-        scheduleNextHourSnapshot();
-    }, millisUntilNextHour);
-};
-
-// Start the hourly snapshot scheduling
-scheduleNextHourSnapshot();
-
-// Health check endpoint
 app.get('/health', (req, res) => {
     res.status(200).send('OK');
 });
 
-// Error handling middleware (must be registered after all routes)
+// Resolve relative to this file so the server works from any working directory
+app.use(express.static(path.join(__dirname, '..', 'public')));
+
 app.use((err, req, res, next) => {
     console.error('Express error:', err);
     res.status(500).send('Something went wrong');
 });
 
-// Start the HTTP server
-const PORT = process.env.PORT || 3000;
+const drawingHistory = new DrawingHistory();
+initializeSocket(io, drawingHistory);
+
+// --- Hourly snapshot scheduling (on the hour, Sydney time) -----------------
+
+let snapshotTimeout = null;
+
+function formatSydneyTime(date = new Date()) {
+    return date.toLocaleString('en-AU', { timeZone: TIME_ZONE, hour12: false });
+}
+
+/**
+ * Milliseconds until the next wall-clock hour boundary in Sydney.
+ * Hour boundaries line up with UTC hour boundaries (the Sydney offset is a
+ * whole number of hours in both standard and daylight time), so this only
+ * needs the current minute/second/millisecond.
+ */
+function getMillisecondsUntilNextHour(now = new Date()) {
+    const elapsedInHour =
+        now.getUTCMinutes() * 60_000 +
+        now.getUTCSeconds() * 1_000 +
+        now.getUTCMilliseconds();
+    return 3_600_000 - elapsedInHour;
+}
+
+function scheduleNextHourSnapshot() {
+    clearTimeout(snapshotTimeout);
+
+    const delay = getMillisecondsUntilNextHour();
+    console.log(`Next snapshot in ${Math.round(delay / 60_000)} minutes (Sydney time now: ${formatSydneyTime()})`);
+
+    snapshotTimeout = setTimeout(async () => {
+        try {
+            console.log(`Taking scheduled snapshot at ${formatSydneyTime()} Sydney time`);
+            await takeSnapshot(drawingHistory, io);
+        } catch (error) {
+            console.error('Error in scheduled snapshot:', error);
+        }
+        scheduleNextHourSnapshot();
+    }, delay);
+}
+
+scheduleNextHourSnapshot();
+
+// --- Startup / shutdown ---------------------------------------------------
+
 http.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on port ${PORT}`);
-    
-    // Log current Sydney time for reference
-    const sydneyTime = getSydneyTime();
-    console.log(`Current Sydney time: ${sydneyTime.toLocaleString()}`);
+    console.log(`Current Sydney time: ${formatSydneyTime()}`);
 });
 
-// Graceful shutdown handling
-const gracefulShutdown = async () => {
-    console.log('Shutting down gracefully...');
-    
-    // Clear the snapshot timeout
-    if (snapshotTimeout) {
-        clearTimeout(snapshotTimeout);
-    }
-    
-    // Take a final snapshot if there are drawings
+let shuttingDown = false;
+
+async function gracefulShutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`Received ${signal}, shutting down gracefully...`);
+
+    clearTimeout(snapshotTimeout);
+
+    // Don't let a slow snapshot or lingering connection keep the process alive
+    const forceExit = setTimeout(() => {
+        console.error('Forceful shutdown after timeout');
+        process.exit(1);
+    }, SHUTDOWN_GRACE_MS);
+    forceExit.unref();
+
     if (drawingHistory.hasDrawings()) {
         try {
             console.log('Taking final snapshot before shutdown...');
-            await takeSnapshot(drawingHistory, snapshotDir, io);
+            await takeSnapshot(drawingHistory, io);
         } catch (error) {
             console.error('Error taking final snapshot:', error);
         }
     }
-    
-    // Close the Socket.IO server (this also closes the attached HTTP server)
+
+    // Closing Socket.IO also closes the underlying HTTP server
     io.close((err) => {
         if (err) {
-            console.error('Error closing Socket.IO and HTTP server:', err);
+            console.error('Error closing server:', err);
             process.exit(1);
-        } else {
-            console.log('Socket.IO and HTTP server closed');
-            process.exit(0);
         }
+        console.log('Server closed');
+        process.exit(0);
     });
-    
-    // Force shutdown after 10 seconds if graceful shutdown fails
-    setTimeout(() => {
-        console.error('Forceful shutdown after timeout');
-        process.exit(1);
-    }, 10000);
-};
+}
 
-// Listen for termination signals
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

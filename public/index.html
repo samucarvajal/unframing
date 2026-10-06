@@ -1,32 +1,30 @@
 <!DOCTYPE html>
-<html>
+<html lang="en-AU">
 <head>
+    <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- Favicon -->
-    <link rel="icon" href="https://samucarvajal.com/wp-content/uploads/2024/04/cropped-samu-favicon.png" type="image/png">
-    <link rel="shortcut icon" href="https://samucarvajal.com/wp-content/uploads/2024/04/cropped-samu-favicon.png" type="image/png">
-    <!-- Socket.IO Client Script -->
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <!-- Add our CSS file -->
-    <link rel="stylesheet" href="styles.css">
-    <!-- Page title -->
     <title>Unframing</title>
+    <meta name="description" content="A collaborative real-time drawing canvas.">
+    <link rel="icon" href="https://samucarvajal.com/wp-content/uploads/2024/04/cropped-samu-favicon.png" type="image/png">
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="canvas-container">
-        <canvas id="drawingCanvas" width="2880" height="1800"></canvas>
-    </div>
-    <div id="colors">
-        <div class="color-dot" style="background: #1d1d1d"></div>
-        <div class="color-dot" style="background: #61bb46"></div>
-        <div class="color-dot" style="background: #fdb827"></div>
-        <div class="color-dot" style="background: #f5821f"></div>
-        <div class="color-dot" style="background: #e03a3e"></div>
-        <div class="color-dot" style="background: #963d97"></div>
-        <div class="color-dot" style="background: #009ddc"></div>
+        <canvas id="drawingCanvas" width="2880" height="1800" aria-label="Shared drawing canvas"></canvas>
     </div>
 
-    <!-- Add our JavaScript file -->
+    <div id="colors" role="toolbar" aria-label="Colour palette">
+        <button type="button" class="color-dot" style="background: #1d1d1d" aria-label="Black"></button>
+        <button type="button" class="color-dot" style="background: #61bb46" aria-label="Green"></button>
+        <button type="button" class="color-dot" style="background: #fdb827" aria-label="Yellow"></button>
+        <button type="button" class="color-dot" style="background: #f5821f" aria-label="Orange"></button>
+        <button type="button" class="color-dot" style="background: #e03a3e" aria-label="Red"></button>
+        <button type="button" class="color-dot" style="background: #963d97" aria-label="Purple"></button>
+        <button type="button" class="color-dot" style="background: #009ddc" aria-label="Blue"></button>
+    </div>
+
+    <!-- Served by the Socket.IO server itself, so client and server versions always match -->
+    <script src="/socket.io/socket.io.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
