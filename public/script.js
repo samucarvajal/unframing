@@ -14,7 +14,6 @@ const PAN_MIN_VELOCITY = 0.03;
 const socket = io();
 const canvas = document.getElementById('drawingCanvas');
 const ctx = canvas.getContext('2d');
-const scroller = document.scrollingElement || document.documentElement;
 
 let currentColor = '#1d1d1d';
 let canDraw = true;
@@ -179,18 +178,18 @@ function extendStroke(clientX, clientY) {
 
 // --- Panning (two fingers) ------------------------------------------------
 
-const activeTouches = new Map(); // pointerId -> { clientX, clientY }
-let pan = null;                  // { x, y, vx, vy, time } centroid of the two fingers
+let pan = null;          // { x, y, vx, vy, time } centroid of the fingers
 let momentumFrame = null;
+let fingersDown = 0;     // from touch events; > 1 means we're panning, not drawing
 
-function touchCentroid() {
+function touchCentroid(touches) {
     let x = 0;
     let y = 0;
-    for (const t of activeTouches.values()) {
+    for (const t of touches) {
         x += t.clientX;
         y += t.clientY;
     }
-    return { x: x / activeTouches.size, y: y / activeTouches.size };
+    return { x: x / touches.length, y: y / touches.length };
 }
 
 function stopMomentum() {
@@ -200,22 +199,22 @@ function stopMomentum() {
     }
 }
 
-function beginPan() {
+function beginPan(touches) {
     endStroke(); // a second finger always cancels drawing
     stopMomentum();
-    const c = touchCentroid();
+    const c = touchCentroid(touches);
     pan = { x: c.x, y: c.y, vx: 0, vy: 0, time: performance.now() };
 }
 
-function movePan() {
+function movePan(touches) {
     if (!pan) return;
-    const c = touchCentroid();
+    const c = touchCentroid(touches);
     const now = performance.now();
     const dt = Math.max(now - pan.time, 1);
     const dx = c.x - pan.x;
     const dy = c.y - pan.y;
 
-    scroller.scrollBy(-dx, -dy);
+    window.scrollBy(-dx, -dy);
 
     // Smooth the velocity a little so momentum isn't jittery
     pan.vx = pan.vx * 0.3 + (dx / dt) * 0.7;
@@ -235,7 +234,7 @@ function endPan() {
     const step = (now) => {
         const dt = now - last;
         last = now;
-        scroller.scrollBy(-vx * dt, -vy * dt);
+        window.scrollBy(-vx * dt, -vy * dt);
         vx *= PAN_FRICTION;
         vy *= PAN_FRICTION;
         if (Math.hypot(vx, vy) > PAN_MIN_VELOCITY) {
@@ -249,23 +248,54 @@ function endPan() {
     }
 }
 
-// --- Pointer events -------------------------------------------------------
-// One finger (or the mouse) draws; two fingers pan. touch-action: none on the
-// canvas stops the browser from scrolling or zooming on its own, so we never
-// get a pointercancel mid-stroke.
+// --- Touch events: two-finger pan -----------------------------------------
+// iOS WebKit (Safari and Chrome alike) doesn't reliably honour
+// touch-action: none for multi-finger gestures: once it suspects a pinch it
+// takes over and stops sending pointer events. Calling preventDefault() on
+// the raw touch events is the one thing that keeps it from doing that, so
+// panning is driven from here rather than from pointer events.
+
+canvas.addEventListener('touchstart', (e) => {
+    fingersDown = e.touches.length;
+    if (fingersDown === 1) {
+        stopMomentum();
+    } else if (fingersDown === 2) {
+        beginPan(e.touches);
+    } else {
+        endStroke();
+        endPan();
+    }
+    e.preventDefault();
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+    if (pan && e.touches.length === 2) {
+        movePan(e.touches);
+    }
+    e.preventDefault();
+}, { passive: false });
+
+function handleTouchEnd(e) {
+    fingersDown = e.touches.length;
+    if (pan && fingersDown < 2) {
+        endPan();
+    }
+}
+canvas.addEventListener('touchend', handleTouchEnd);
+canvas.addEventListener('touchcancel', handleTouchEnd);
+
+// --- Pointer events: drawing ----------------------------------------------
+// One finger (or the mouse) draws. Pointer events give us coalesced samples
+// for smooth fast strokes, which touch events don't.
 
 canvas.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'touch') {
-        activeTouches.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
-        if (activeTouches.size === 1) {
-            stopMomentum();
-            if (canDraw) beginStroke(e);
-        } else if (activeTouches.size === 2) {
-            beginPan();
-        } else {
+        // touchstart fires after pointerdown, so count this finger ourselves
+        if (fingersDown >= 1) {
             endStroke();
-            endPan();
+            return;
         }
+        if (canDraw) beginStroke(e);
         return;
     }
 
@@ -274,15 +304,11 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 
 canvas.addEventListener('pointermove', (e) => {
-    if (e.pointerType === 'touch' && activeTouches.has(e.pointerId)) {
-        activeTouches.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
-        if (pan && activeTouches.size === 2) {
-            movePan();
-            return;
-        }
-    }
-
     if (!stroke || e.pointerId !== stroke.pointerId) return;
+    if (e.pointerType === 'touch' && fingersDown > 1) {
+        endStroke();
+        return;
+    }
 
     // Fast strokes generate more samples than pointermove events; replaying
     // the coalesced ones keeps energetic lines smooth instead of chorded.
@@ -295,10 +321,6 @@ canvas.addEventListener('pointermove', (e) => {
 });
 
 function handlePointerUp(e) {
-    if (e.pointerType === 'touch') {
-        activeTouches.delete(e.pointerId);
-        if (pan && activeTouches.size < 2) endPan();
-    }
     if (stroke && e.pointerId === stroke.pointerId) endStroke();
 }
 
