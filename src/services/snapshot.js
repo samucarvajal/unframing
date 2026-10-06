@@ -41,10 +41,17 @@ function renderToPng(history) {
     for (const segment of history) {
         if (segment.type !== 'draw') continue;
         ctx.beginPath();
-        ctx.moveTo(segment.x0, segment.y0);
-        ctx.lineTo(segment.x1, segment.y1);
-        ctx.strokeStyle = segment.color;
-        ctx.stroke();
+        if (segment.x0 === segment.x1 && segment.y0 === segment.y1) {
+            // A tap: drawn as a filled circle, exactly as the clients do
+            ctx.arc(segment.x0, segment.y0, LINE_WIDTH / 2, 0, Math.PI * 2);
+            ctx.fillStyle = segment.color;
+            ctx.fill();
+        } else {
+            ctx.moveTo(segment.x0, segment.y0);
+            ctx.lineTo(segment.x1, segment.y1);
+            ctx.strokeStyle = segment.color;
+            ctx.stroke();
+        }
     }
 
     return canvas.toBuffer('image/png');

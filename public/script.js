@@ -30,12 +30,27 @@ function clearCanvas(target = ctx) {
     target.fillRect(0, 0, canvas.width, canvas.height);
 }
 
+/**
+ * Draw one segment on a context. A zero-length segment is a dot from a tap
+ * or click; it's drawn as an explicit filled circle because WebKit doesn't
+ * reliably render zero-length strokes, even with round caps.
+ */
+function drawSegment(target, x0, y0, x1, y1, color) {
+    target.beginPath();
+    if (x0 === x1 && y0 === y1) {
+        target.arc(x0, y0, LINE_WIDTH / 2, 0, Math.PI * 2);
+        target.fillStyle = color;
+        target.fill();
+    } else {
+        target.moveTo(x0, y0);
+        target.lineTo(x1, y1);
+        target.strokeStyle = color;
+        target.stroke();
+    }
+}
+
 function drawLine(x0, y0, x1, y1, color) {
-    ctx.beginPath();
-    ctx.moveTo(x0, y0);
-    ctx.lineTo(x1, y1);
-    ctx.strokeStyle = color;
-    ctx.stroke();
+    drawSegment(ctx, x0, y0, x1, y1, color);
 }
 
 /**
@@ -47,11 +62,7 @@ function drawLine(x0, y0, x1, y1, color) {
  */
 function drawSegments(target, colours, segments) {
     for (const [x0, y0, x1, y1, c] of segments) {
-        target.beginPath();
-        target.moveTo(x0, y0);
-        target.lineTo(x1, y1);
-        target.strokeStyle = colours[c] || '#1d1d1d';
-        target.stroke();
+        drawSegment(target, x0, y0, x1, y1, colours[c] || '#1d1d1d');
     }
 }
 
@@ -212,8 +223,14 @@ function endStroke() {
     stroke = null;
 }
 
-/** Send one segment, drawing it locally first. */
+/**
+ * Send one segment, drawing it locally first. Coordinates are rounded to
+ * whole pixels here, before drawing, so what we draw is exactly what the
+ * server stores and every other device draws.
+ */
 function emitSegment(x0, y0, x1, y1) {
+    x0 = Math.round(x0); y0 = Math.round(y0);
+    x1 = Math.round(x1); y1 = Math.round(y1);
     drawLine(x0, y0, x1, y1, currentColor);
     socket.emit('draw', { type: 'draw', x0, y0, x1, y1, color: currentColor }, (ack) => {
         // Our own strokes aren't echoed back, so the ack is how we keep our
@@ -432,11 +449,7 @@ canvas.addEventListener('pointermove', (e) => {
 
 function handlePointerUp(e) {
     if (!stroke || e.pointerId !== stroke.pointerId) return;
-    if (e.type === 'pointerup') {
-        releaseStroke();
-    } else {
-        endStroke(); // cancelled: no dot
-    }
+    releaseStroke();
 }
 
 canvas.addEventListener('pointerup', handlePointerUp);
