@@ -70,9 +70,22 @@ class DrawingHistory {
         };
     }
 
-    /** Full history in the shape the client and snapshot renderer expect. */
+    /** Full history, expanded, for the snapshot renderer. */
     getFullHistory() {
         return this.segments.map((segment) => this.expandSegment(segment));
+    }
+
+    /**
+     * Compact history for sending to clients: a colour palette plus one
+     * [x0, y0, x1, y1, colourIndex] tuple per segment. Roughly a third the
+     * size of the expanded form, which matters when a tab re-syncs after an
+     * hour of drawing.
+     */
+    toWireFormat() {
+        return {
+            colours: this.indexToColour,
+            segments: this.segments.map((s) => [s.x0, s.y0, s.x1, s.y1, s.c]),
+        };
     }
 
     hasDrawings() {

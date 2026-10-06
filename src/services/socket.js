@@ -40,10 +40,10 @@ const initializeSocket = (io, drawingHistory) => {
 
         const sendHistory = (event) => {
             try {
-                socket.emit(event, drawingHistory.getFullHistory());
+                socket.emit(event, drawingHistory.toWireFormat());
             } catch (error) {
                 console.error(`Error sending ${event}:`, error);
-                socket.emit(event, []);
+                socket.emit(event, { colours: [], segments: [] });
             }
         };
 

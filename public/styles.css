@@ -1,17 +1,15 @@
 html, body {
     margin: 0;
     padding: 0;
-    height: 100%;
-    overflow: auto;
     background: #efefef;
+    /* No rubber-banding at the edges while we pan the canvas ourselves */
+    overscroll-behavior: none;
 }
 
+/* Sized to the canvas so the document itself is what scrolls */
 .canvas-container {
-    position: relative;
     width: 2880px;
     height: 1800px;
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
 }
 
 canvas {
@@ -19,7 +17,11 @@ canvas {
     width: 2880px;
     height: 1800px;
     background: #efefef;
+    /* We handle all touch gestures ourselves: one finger draws, two fingers pan */
     touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
     cursor: crosshair;
 }
 
