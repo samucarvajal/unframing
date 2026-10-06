@@ -78,7 +78,8 @@ const takeSnapshot = async (drawingHistory, io) => {
 
     if (!drawingHistory.hasDrawings()) {
         console.log('No drawings to snapshot, clearing canvas only');
-        io.emit('force-clear-canvas', { forceEndDrawing: true });
+        drawingHistory.clear();
+        io.emit('force-clear-canvas', { epoch: drawingHistory.epoch });
         return null;
     }
 
@@ -87,7 +88,7 @@ const takeSnapshot = async (drawingHistory, io) => {
     try {
         history = drawingHistory.getFullHistory();
         drawingHistory.clear();
-        io.emit('force-clear-canvas', { forceEndDrawing: true });
+        io.emit('force-clear-canvas', { epoch: drawingHistory.epoch });
     } finally {
         // Accept new strokes again as soon as the old ones are captured
         drawingHistory.isResetting = false;

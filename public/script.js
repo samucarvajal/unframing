@@ -39,13 +39,22 @@ function drawLine(x0, y0, x1, y1, color) {
 }
 
 /**
- * Redraw the whole canvas from a compact history payload
- * ({ colours: [...], segments: [[x0, y0, x1, y1, colourIndex], ...] }).
- *
- * Renders to an offscreen canvas and swaps it in with one drawImage, so the
- * visible canvas never goes blank. Consecutive same-colour segments are
- * batched into one path, which is far cheaper than one stroke() per segment.
+ * Draw compact segments ([x0, y0, x1, y1, colourIndex] tuples) onto a
+ * context, one stroke per segment, exactly as live strokes are drawn. This
+ * matters: batching segments into one path anti-aliases the joins
+ * differently, and every device must end up with the same pixels whether it
+ * saw a stroke live or caught up later.
  */
+function drawSegments(target, colours, segments) {
+    for (const [x0, y0, x1, y1, c] of segments) {
+        target.beginPath();
+        target.moveTo(x0, y0);
+        target.lineTo(x1, y1);
+        target.strokeStyle = colours[c] || '#1d1d1d';
+        target.stroke();
+    }
+}
+
 function replayHistory({ colours = [], segments = [] } = {}) {
     const off = document.createElement('canvas');
     off.width = canvas.width;
@@ -55,40 +64,95 @@ function replayHistory({ colours = [], segments = [] } = {}) {
     octx.lineWidth = LINE_WIDTH;
     octx.lineCap = 'round';
     octx.lineJoin = 'round';
-
-    let runColour = -1;
-    for (const [x0, y0, x1, y1, c] of segments) {
-        if (c !== runColour) {
-            if (runColour !== -1) octx.stroke();
-            octx.beginPath();
-            octx.strokeStyle = colours[c] || '#1d1d1d';
-            runColour = c;
-        }
-        octx.moveTo(x0, y0);
-        octx.lineTo(x1, y1);
-    }
-    if (runColour !== -1) octx.stroke();
-
+    drawSegments(octx, colours, segments);
     ctx.drawImage(off, 0, 0);
 }
 
 clearCanvas();
 
-// --- Server events --------------------------------------------------------
+// --- Consistency with the server ------------------------------------------
+// Every segment has a sequence number and every canvas lifetime (between
+// resets) has an epoch. We track where we are and check in with the server
+// every few seconds: if we've missed anything it sends just the gap, and if
+// the epoch changed (a reset we didn't hear about, or a server restart) it
+// sends the whole canvas. Nothing depends on every single event arriving.
 
-socket.on('drawing-history', replayHistory); // on (re)connect
-socket.on('current-state', replayHistory);   // reply to 'request-state'
+const SYNC_INTERVAL_MS = 3000;
+
+let epoch = null; // unknown until the first state from the server
+let seq = 0;      // last segment we know we have drawn
+
+function applyState(state) {
+    syncInFlight = false;
+    if (!state || typeof state.epoch !== 'number') return;
+
+    if (state.epoch !== epoch || state.from === 0) {
+        // New epoch or full state: replace everything
+        replayHistory(state);
+        epoch = state.epoch;
+        seq = state.seq;
+        return;
+    }
+
+    if (state.from > seq) {
+        // The delta starts after where we are; we can't fill the hole, so
+        // ask for a full copy rather than draw something inconsistent
+        requestSync(0);
+        return;
+    }
+
+    // Delta: redrawing a few segments we already have is harmless
+    drawSegments(ctx, state.colours, state.segments);
+    seq = Math.max(seq, state.seq);
+}
+
+let syncInFlight = false;
+
+function requestSync(fromSeq = seq) {
+    if (!socket.connected || syncInFlight) return;
+    syncInFlight = true;
+    socket.emit('sync', { epoch, seq: fromSeq });
+    // The server only replies when we're behind, so don't wait on a reply
+    setTimeout(() => { syncInFlight = false; }, 1000);
+}
+
+function noteSequence(data) {
+    if (!data || typeof data.epoch !== 'number') return;
+    if (data.epoch !== epoch) {
+        // A reset we didn't hear about: get the whole canvas
+        requestSync(0);
+        return;
+    }
+    if (data.seq > seq + 1) {
+        // We missed something in between; fetch the gap
+        requestSync(seq);
+    }
+    seq = Math.max(seq, data.seq);
+}
+
+socket.on('drawing-history', applyState); // on (re)connect
+socket.on('current-state', applyState);   // legacy full re-sync
+socket.on('sync-state', applyState);      // reply to our 'sync' check
 
 socket.on('draw', (data) => {
-    if (data.type === 'draw') {
-        drawLine(data.x0, data.y0, data.x1, data.y1, data.color);
+    if (data.type !== 'draw') return;
+    if (typeof data.epoch === 'number' && data.epoch !== epoch) {
+        // Belongs to a canvas we don't have yet; the sync will bring it
+        requestSync(0);
+        return;
     }
+    drawLine(data.x0, data.y0, data.x1, data.y1, data.color);
+    noteSequence(data);
 });
 
-socket.on('force-clear-canvas', () => {
+socket.on('force-clear-canvas', ({ epoch: newEpoch } = {}) => {
     endStroke();
     canDraw = false;
     clearCanvas();
+    if (typeof newEpoch === 'number') {
+        epoch = newEpoch;
+        seq = 0;
+    }
     // Brief pause so an in-progress stroke doesn't bleed onto the fresh canvas
     setTimeout(() => {
         canDraw = true;
@@ -99,14 +163,13 @@ socket.on('snapshot-error', ({ message }) => {
     console.warn('Snapshot error:', message);
 });
 
-// A backgrounded tab (especially on iOS) can miss events or lose its
-// connection. If the socket dropped, Socket.IO reconnects and the server
-// sends 'drawing-history' anyway; if it's still up, ask for a fresh copy.
+// Periodic check, plus an immediate one whenever the tab comes back: a
+// backgrounded tab (especially on iOS) is throttled and can miss events
+setInterval(() => requestSync(), SYNC_INTERVAL_MS);
 document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && socket.connected) {
-        socket.emit('request-state');
-    }
+    if (!document.hidden) requestSync();
 });
+window.addEventListener('focus', () => requestSync());
 
 // --- Geometry helpers -----------------------------------------------------
 
@@ -171,6 +234,10 @@ function extendStroke(clientX, clientY) {
         x1: pos.x,
         y1: pos.y,
         color: currentColor,
+    }, (ack) => {
+        // Our own strokes aren't echoed back, so the ack is how we keep our
+        // place in the sequence (seq 0 means the server didn't store it)
+        if (ack && ack.seq > 0) noteSequence(ack);
     });
     stroke.lastX = pos.x;
     stroke.lastY = pos.y;

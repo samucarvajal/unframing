@@ -1,6 +1,15 @@
 /**
  * In-memory store of every line segment drawn on the shared canvas.
  *
+ * Consistency model
+ * -----------------
+ * Every segment gets a sequence number (its 1-based position in the current
+ * epoch) and every canvas lifetime - from one reset to the next - gets an
+ * epoch id. Clients track (epoch, seq) and periodically ask the server for
+ * anything newer, so a dropped event, a throttled background tab, or a
+ * server restart all self-correct within a few seconds instead of leaving
+ * that device permanently out of step.
+ *
  * Segments are stored compactly (rounded integer coordinates and a small
  * colour index rather than the full colour string) because the canvas can
  * accumulate hundreds of thousands of segments between hourly snapshots.
@@ -12,9 +21,15 @@ const MAX_SEGMENTS = 1_000_000;
 
 const DEFAULT_COLOUR = '#1d1d1d';
 
+function newEpoch() {
+    // Time-based so a restarted server never reuses an epoch a client has seen
+    return Date.now();
+}
+
 class DrawingHistory {
     constructor() {
         this.segments = [];
+        this.epoch = newEpoch();
         this.isResetting = false;
 
         // colour string -> index, and index -> colour string.
@@ -37,13 +52,18 @@ class DrawingHistory {
         return this.indexToColour[index] ?? DEFAULT_COLOUR;
     }
 
+    /** Sequence number of the most recent segment (0 when empty). */
+    get seq() {
+        return this.segments.length;
+    }
+
     /**
-     * Record a validated segment. Returns true if it was stored.
-     * Callers are expected to have validated `data` already.
+     * Record a validated segment. Returns its sequence number, or 0 if it
+     * was not stored. Callers are expected to have validated `data` already.
      */
     addSegment(data) {
-        if (this.isResetting || data.type !== 'draw') return false;
-        if (this.segments.length >= MAX_SEGMENTS) return false;
+        if (this.isResetting || data.type !== 'draw') return 0;
+        if (this.segments.length >= MAX_SEGMENTS) return 0;
 
         this.segments.push({
             x0: Math.round(data.x0),
@@ -52,11 +72,13 @@ class DrawingHistory {
             y1: Math.round(data.y1),
             c: this.getColorIndex(data.color),
         });
-        return true;
+        return this.segments.length;
     }
 
+    /** Start a new epoch with an empty canvas. */
     clear() {
         this.segments = [];
+        this.epoch = newEpoch();
     }
 
     expandSegment(segment) {
@@ -76,15 +98,18 @@ class DrawingHistory {
     }
 
     /**
-     * Compact history for sending to clients: a colour palette plus one
-     * [x0, y0, x1, y1, colourIndex] tuple per segment. Roughly a third the
-     * size of the expanded form, which matters when a tab re-syncs after an
-     * hour of drawing.
+     * Compact state for clients: colour palette plus one
+     * [x0, y0, x1, y1, colourIndex] tuple per segment after `afterSeq`.
+     * With afterSeq = 0 this is the whole canvas.
      */
-    toWireFormat() {
+    toWireFormat(afterSeq = 0) {
+        const from = Math.max(0, Math.min(afterSeq, this.segments.length));
         return {
+            epoch: this.epoch,
+            from,
+            seq: this.segments.length,
             colours: this.indexToColour,
-            segments: this.segments.map((s) => [s.x0, s.y0, s.x1, s.y1, s.c]),
+            segments: this.segments.slice(from).map((s) => [s.x0, s.y0, s.x1, s.y1, s.c]),
         };
     }
 
