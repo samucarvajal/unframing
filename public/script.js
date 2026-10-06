@@ -474,6 +474,22 @@ canvas.addEventListener('pointerleave', (e) => {
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 
+// --- Cursor ---------------------------------------------------------------
+// A little marker pen, angled like a hand holding it, with its tip in the
+// selected colour. The hotspot is the tip, so lines start where it points.
+
+function markerCursor(colour) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <g transform="translate(1 31) rotate(-45)" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round">
+    <path d="M0 0 L7 -3.5 L7 3.5 Z" fill="${colour}"/>
+    <rect x="7" y="-3.5" width="6" height="7" fill="${colour}"/>
+    <rect x="13" y="-4.5" width="20" height="9" rx="1.5" fill="#2b2b2b"/>
+    <rect x="33" y="-4.5" width="5" height="9" rx="1.5" fill="${colour}"/>
+  </g>
+</svg>`;
+    return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") 1 31, crosshair`;
+}
+
 // --- Colour palette -------------------------------------------------------
 
 const colourDots = document.querySelectorAll('.color-dot');
@@ -481,6 +497,7 @@ const colourDots = document.querySelectorAll('.color-dot');
 function selectColour(dot) {
     currentColor = dot.style.backgroundColor;
     colourDots.forEach((d) => d.classList.toggle('active', d === dot));
+    canvas.style.cursor = markerCursor(currentColor);
 }
 
 colourDots.forEach((dot) => {
