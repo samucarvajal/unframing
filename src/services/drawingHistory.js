@@ -12,7 +12,7 @@
  *
  * Segments are stored compactly (rounded integer coordinates and a small
  * colour index rather than the full colour string) because the canvas can
- * accumulate hundreds of thousands of segments between hourly snapshots.
+ * accumulate hundreds of thousands of segments between daily snapshots.
  */
 
 // Hard cap on stored segments so a runaway client can't exhaust memory.

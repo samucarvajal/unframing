@@ -64,7 +64,7 @@ app.use((err, req, res, next) => {
 const drawingHistory = new DrawingHistory();
 initializeSocket(io, drawingHistory);
 
-// --- Hourly snapshot scheduling (on the hour, Sydney time) -----------------
+// --- Daily snapshot scheduling (midnight, Sydney time) ---------------------
 
 let snapshotTimeout = null;
 
@@ -72,25 +72,53 @@ function formatSydneyTime(date = new Date()) {
     return date.toLocaleString('en-AU', { timeZone: TIME_ZONE, hour12: false });
 }
 
-/**
- * Milliseconds until the next wall-clock hour boundary in Sydney.
- * Hour boundaries line up with UTC hour boundaries (the Sydney offset is a
- * whole number of hours in both standard and daylight time), so this only
- * needs the current minute/second/millisecond.
- */
-function getMillisecondsUntilNextHour(now = new Date()) {
-    const elapsedInHour =
-        now.getUTCMinutes() * 60_000 +
-        now.getUTCSeconds() * 1_000 +
-        now.getUTCMilliseconds();
-    return 3_600_000 - elapsedInHour;
+const sydneyParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: TIME_ZONE,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+});
+
+/** Sydney wall-clock date/time of an instant, as numbers. */
+function getSydneyWallClock(date) {
+    const parts = {};
+    for (const { type, value } of sydneyParts.formatToParts(date)) {
+        if (type !== 'literal') parts[type] = Number(value);
+    }
+    return parts;
 }
 
-function scheduleNextHourSnapshot() {
+/** Sydney's UTC offset in milliseconds at the given instant (+10h or +11h). */
+function getSydneyOffsetMs(date) {
+    const p = getSydneyWallClock(date);
+    const wallClockAsUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+    const instantToSecond = Math.floor(date.getTime() / 1_000) * 1_000;
+    return wallClockAsUtc - instantToSecond;
+}
+
+/**
+ * The instant of the next midnight on Sydney's calendar.
+ * The offset is read once at "now" for a first guess and once at the guess
+ * itself, so a daylight-saving change on the day in between (they happen
+ * at 2am/3am, never at midnight) still lands on exactly 00:00:00.
+ */
+function getNextSydneyMidnight(now = new Date()) {
+    const today = getSydneyWallClock(now);
+    const tomorrowMidnightWallClock = Date.UTC(today.year, today.month - 1, today.day + 1);
+    const guess = tomorrowMidnightWallClock - getSydneyOffsetMs(now);
+    return new Date(tomorrowMidnightWallClock - getSydneyOffsetMs(new Date(guess)));
+}
+
+function scheduleNextMidnightSnapshot() {
     clearTimeout(snapshotTimeout);
 
-    const delay = getMillisecondsUntilNextHour();
-    console.log(`Next snapshot in ${Math.round(delay / 60_000)} minutes (Sydney time now: ${formatSydneyTime()})`);
+    const now = new Date();
+    const delay = getNextSydneyMidnight(now).getTime() - now.getTime();
+    console.log(`Next snapshot in ${Math.round(delay / 60_000)} minutes (Sydney time now: ${formatSydneyTime(now)})`);
 
     snapshotTimeout = setTimeout(async () => {
         try {
@@ -99,11 +127,11 @@ function scheduleNextHourSnapshot() {
         } catch (error) {
             console.error('Error in scheduled snapshot:', error);
         }
-        scheduleNextHourSnapshot();
+        scheduleNextMidnightSnapshot();
     }, delay);
 }
 
-scheduleNextHourSnapshot();
+scheduleNextMidnightSnapshot();
 
 // --- Startup / shutdown ---------------------------------------------------
 
