@@ -10,15 +10,19 @@
  * server restart all self-correct within a few seconds instead of leaving
  * that device permanently out of step.
  *
- * Segments are stored compactly (rounded integer coordinates and a small
- * colour index rather than the full colour string) because the canvas can
- * accumulate hundreds of thousands of segments between hourly snapshots.
+ * Storage
+ * -------
+ * The canvas lives for a whole day, so it can accumulate millions of
+ * segments. They're kept in flat typed arrays (four Int16 coordinates and a
+ * Uint8 colour index, 9 bytes a segment) rather than one object each, which
+ * is roughly eight times smaller and keeps a busy day well within memory.
  */
 
-// Hard cap on stored segments so a runaway client can't exhaust memory.
-// At ~40 bytes a segment this is roughly 40 MB worst case.
-const MAX_SEGMENTS = 1_000_000;
+// Hard cap on stored segments so a runaway day can't exhaust memory.
+// At 9 bytes a segment this is ~36 MB.
+const MAX_SEGMENTS = 4_000_000;
 
+const INITIAL_CAPACITY = 65_536;
 const DEFAULT_COLOUR = '#1d1d1d';
 
 function newEpoch() {
@@ -28,7 +32,6 @@ function newEpoch() {
 
 class DrawingHistory {
     constructor() {
-        this.segments = [];
         this.epoch = newEpoch();
         this.isResetting = false;
 
@@ -36,12 +39,36 @@ class DrawingHistory {
         // Kept across resets so indices stay stable for the life of the process.
         this.colourToIndex = new Map();
         this.indexToColour = [];
+
+        this.allocate(INITIAL_CAPACITY);
+    }
+
+    allocate(capacity) {
+        this.capacity = capacity;
+        this.length = 0;
+        this.x0 = new Int16Array(capacity);
+        this.y0 = new Int16Array(capacity);
+        this.x1 = new Int16Array(capacity);
+        this.y1 = new Int16Array(capacity);
+        this.colour = new Uint8Array(capacity);
+    }
+
+    grow() {
+        const capacity = Math.min(MAX_SEGMENTS, this.capacity * 2);
+        const copy = (old, Type) => { const next = new Type(capacity); next.set(old.subarray(0, this.length)); return next; };
+        this.x0 = copy(this.x0, Int16Array);
+        this.y0 = copy(this.y0, Int16Array);
+        this.x1 = copy(this.x1, Int16Array);
+        this.y1 = copy(this.y1, Int16Array);
+        this.colour = copy(this.colour, Uint8Array);
+        this.capacity = capacity;
     }
 
     getColorIndex(colour) {
         let index = this.colourToIndex.get(colour);
         if (index === undefined) {
             index = this.indexToColour.length;
+            if (index > 255) return 0; // the palette has 7 colours; this can't happen in practice
             this.colourToIndex.set(colour, index);
             this.indexToColour.push(colour);
         }
@@ -54,7 +81,7 @@ class DrawingHistory {
 
     /** Sequence number of the most recent segment (0 when empty). */
     get seq() {
-        return this.segments.length;
+        return this.length;
     }
 
     /**
@@ -63,38 +90,41 @@ class DrawingHistory {
      */
     addSegment(data) {
         if (this.isResetting || data.type !== 'draw') return 0;
-        if (this.segments.length >= MAX_SEGMENTS) return 0;
+        if (this.length >= MAX_SEGMENTS) return 0;
+        if (this.length === this.capacity) this.grow();
 
-        this.segments.push({
-            x0: Math.round(data.x0),
-            y0: Math.round(data.y0),
-            x1: Math.round(data.x1),
-            y1: Math.round(data.y1),
-            c: this.getColorIndex(data.color),
-        });
-        return this.segments.length;
+        const i = this.length;
+        this.x0[i] = Math.round(data.x0);
+        this.y0[i] = Math.round(data.y0);
+        this.x1[i] = Math.round(data.x1);
+        this.y1[i] = Math.round(data.y1);
+        this.colour[i] = this.getColorIndex(data.color);
+        this.length = i + 1;
+        return this.length;
     }
 
     /** Start a new epoch with an empty canvas. */
     clear() {
-        this.segments = [];
+        this.allocate(INITIAL_CAPACITY);
         this.epoch = newEpoch();
     }
 
-    expandSegment(segment) {
+    expandSegment(i) {
         return {
             type: 'draw',
-            x0: segment.x0,
-            y0: segment.y0,
-            x1: segment.x1,
-            y1: segment.y1,
-            color: this.getColorFromIndex(segment.c),
+            x0: this.x0[i],
+            y0: this.y0[i],
+            x1: this.x1[i],
+            y1: this.y1[i],
+            color: this.getColorFromIndex(this.colour[i]),
         };
     }
 
     /** Full history, expanded, for the snapshot renderer. */
     getFullHistory() {
-        return this.segments.map((segment) => this.expandSegment(segment));
+        const out = new Array(this.length);
+        for (let i = 0; i < this.length; i++) out[i] = this.expandSegment(i);
+        return out;
     }
 
     /**
@@ -103,22 +133,26 @@ class DrawingHistory {
      * With afterSeq = 0 this is the whole canvas.
      */
     toWireFormat(afterSeq = 0) {
-        const from = Math.max(0, Math.min(afterSeq, this.segments.length));
+        const from = Math.max(0, Math.min(afterSeq, this.length));
+        const segments = new Array(this.length - from);
+        for (let i = from; i < this.length; i++) {
+            segments[i - from] = [this.x0[i], this.y0[i], this.x1[i], this.y1[i], this.colour[i]];
+        }
         return {
             epoch: this.epoch,
             from,
-            seq: this.segments.length,
+            seq: this.length,
             colours: this.indexToColour,
-            segments: this.segments.slice(from).map((s) => [s.x0, s.y0, s.x1, s.y1, s.c]),
+            segments,
         };
     }
 
     hasDrawings() {
-        return this.segments.length > 0;
+        return this.length > 0;
     }
 
     get size() {
-        return this.segments.length;
+        return this.length;
     }
 }
 
